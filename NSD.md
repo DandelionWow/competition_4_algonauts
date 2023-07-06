@@ -76,6 +76,51 @@ fMRI是功能性磁共振成像的缩写，是一种无创非放射性观察大�
 ##### nsddata/freesurfer/subjAA/label/[lh,rh].R2.mgz
 ？这是干啥的？没有说明？应该不是体素方差
 
+### Results of single-trial GLM
+对于单试验GLM，我们使用3种不同的GLM模型分析NSD实验的时间序列数据。这些模型的标识符是:
+- **betas_assumehrf (beta version 1; b1)** - GLM in which a canonical HRF is used. （使用规范HRF的GLM）
+- **betas_fithrf (beta version 2; b2)** - GLM in which the HRF is estimated for each voxel.（估计每个体素的HRF的GLM。）
+- **betas_fithrf_GLMdenoise_RR (beta version 3; b3)** – GLM in which the HRF is estimated for each voxel, the GLMdenoise technique is used for denoising, and ridge regression is used to better estimate the single-trial betas.（其中估计每个体素的HRF, glm降噪技术用于去噪，ridge regression用于更好地估计单次试验贝塔。）
+
+从这些GLMs中获得的betas的解释是，它们是每次刺激试验引起的BOLD反应幅度，相对于没有刺激时存在的基线信号水平(“灰屏”)。注意，betas是用信号变化的百分比来表示的，它是用一个体素获得的全部振幅除以在给定扫描过程中观察到的该体素的大平均强度，然后乘以100。
+
+在主体本身的体积空间(func1mm和func1pt8mm)、主体本身的表面空间(nativesurface)以及群体空间(f平均和MNI)中都提供beta。稍后将提供有关本机表面和组空间的详细信息。
+
+注意，为了节省磁盘空间，为func1pt8mm空间提供了'betas_assumehrf'版本，但没有为func1mm空间提供。
+
+##### nsddata_betas/ppdata/subjAA/func*/betas_*/betas_sessionBB.[nii.gz,hdf5]
+这些是单次试验的beta值(已乘以300并转换为整数格式)。beta是按时间顺序排列的。**有750个beta，因为在每个扫描会话中有750个刺激试验**(在连接所有12次运行之后)。beta与subjAA在sessionBB中获得的数据相对应。
+
+##### nsddata_betas/ppdata/subjAA/func*/betas_*/meanbeta.nii.gz
+##### nsddata_betas/ppdata/subjAA/func*/betas_*/meanbeta_sessionBB.nii.gz
+对于每个会话，计算所有单次试验betas的平均值(meanbeta_sessionBB)；然后，在所有扫描过程中取平均值(meanbeta)。结果是一个体积，表示subjAA获得的逐体素平均单次试验beta。(请注意，虽然文件格式是单一的，但这些值仍然必须除以300才能返回到信号变化单位的百分比。)（一个体素，750个刺激实验的平均值）
+![meanbeta.nii.gz](https://slite.com/api/files/IcvXivk6bc/image.png)
+
+##### nsddata_betas/ppdata/subjAA/func*/betas_*/R2.nii.gz
+##### nsddata_betas/ppdata/subjAA/func*/betas_*/R2_sessionBB.nii.gz
+这包含GLM模型在每个会话中解释的方差(R2_sessionBB.nii.gz)，以及该数量在所有会话中的平均值(R2.nii.gz)。
+
+请注意，“betas_assumehrf”和“betas_fithrf”模型的R2值可能不是很有用，因为这些模型非常灵活，基本上可以拟合给定时间序列中的几乎所有方差(即使时间序列没有可靠的刺激诱发反应)。相反，“betas_fithrf_GLMdenoise_RR”的R2可能是有用的，因为ridge-regression正则化确实根据每个给定体素的数据中出现的响应可靠性缩小了模型。在R2_sessionBB.nii.gz中可能存在无效体素（为`NaNs`）。对于R2.nii.gz，我们使用nanmean计算平均值。
+![R2.nii.gz](https://slite.com/api/files/_fi_drYdKE/image.png)
+
+##### nsddata_betas/ppdata/subjAA/func*/betas_*/R2run_sessionBB.nii.gz
+这包含由GLM模型解释的方差，该模型为给定会话中的每次运行分别计算。
+
+##### nsddata_betas/ppdata/subjAA/func*/betas_*/HRFindex_sessionBB.nii.gz
+##### nsddata_betas/ppdata/subjAA/func*/betas_*/HRFindexrun_sessionBB.nii.gz
+每个体素所选HRF的索引(1到20之间的整数)。这是对会话(HRFindexrun_sessionBB)中每次运行的估计。用于分析整个数据会话的最终HRF是通过组合跨运行的结果来确定的(HRFindex_sessionBB)。
+
+> 在fMRI中，每个体素所选的HRF是指在进行神经影像学分析时，对于每个体素，所选择的血氧水平依赖性响应函数（HRF）的索引。这个索引通常是一个介于1到20之间的整数，用于描述神经元活动引起的血氧水平变化。
+> 
+> **HRF的索引值越大，表示响应函数的时间延迟越长，即神经元活动引起的血氧水平变化的响应时间越长。通常意味着神经元活动的持续时间更长，或者神经元活动的强度更弱。可能意味着神经元的活动更加缓慢或者更加微弱。这可能发生在许多情况下，例如在睡眠、休息或者放松时，神经元的活动可能会变得更加缓慢。此外，神经元的活动可能会受到药物、疾病或其他因素的影响而变得更加微弱。**
+
+![HRFindex_sessionBB.nii.gz](https://slite.com/api/files/c0HwCMD7Qd/image.png)
+
+##### nsddata_betas/ppdata/subjAA/func*/betas_*/FRACvalue_sessionBB.nii.gz
+
+##### nsddata_betas/ppdata/subjAA/func*/betas_*/R2run_sessionBB.nii.gz
+
+
 ## 关键词
 ### 体素
 体素是体积元素（Volume Pixel）的简称，一张3D医学图像可以看成是由若干个体素构成的，体素是一张3D医疗图像在空间上的最小单元（功能性磁共振成像（fMRI）的基本单元）。[from "医学图像预处理--重采样"](blog.csdn.net/winner19990120/article/details/121605297)
@@ -102,3 +147,15 @@ $$\beta_{i,j} = (X^TX)^{-1}X^TY_{i,j}$$
 - Boxcar函数：在试验期间为1，否则为0。
 - Gamma函数：在试验期间呈现出更复杂的形状，可以更好地拟合血氧水平响应。
 - Derivatives of Gamma函数：Gamma函数的导数，可以更好地拟合血氧水平响应的上升和下降阶段。
+
+### BOLD 血氧水平依赖
+血氧水平依赖（blood oxygenation level dependent，BOLD）
+
+### HRF 血氧水平依赖性响应函数
+HRF是血氧水平依赖性响应函数（hemodynamic response function）的缩写，它是一种用于描述神经元活动与血氧水平变化之间关系的函数。HRF通常被用于fMRI数据分析中，以便将神经元活动转换为血氧水平变化。HRF可以使用数学公式表示：
+
+$$ HRF(t) = \frac{(t / \tau)^{a-1} e^{-t/\tau}}{\tau \Gamma(a)} $$ 
+
+其中，$t$是时间，$\tau$是HRF的时间常数，$a$是HRF的形状参数，$\Gamma(a)$是Gamma函数。
+
+> 时间常数是HRF的一个参数，它描述了HRF的响应时间。时间常数越小，HRF的响应时间就越短，反之亦然。形状参数是HRF的另一个参数，它描述了HRF的形状。形状参数越大，HRF的峰值就越高，反之亦然。例如，在fMRI数据分析中，通常使用的HRF具有时间常数为0.9秒和形状参数为6的Gamma函数形式。
