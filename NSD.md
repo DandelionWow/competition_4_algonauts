@@ -117,8 +117,12 @@ fMRI是功能性磁共振成像的缩写，是一种无创非放射性观察大�
 ![HRFindex_sessionBB.nii.gz](https://slite.com/api/files/c0HwCMD7Qd/image.png)
 
 ##### nsddata_betas/ppdata/subjAA/func*/betas_*/FRACvalue_sessionBB.nii.gz
+为每个体素选择的分数正则化水平。请注意，无效体素(例如，大脑外)被给予1的分数。
 
-##### nsddata_betas/ppdata/subjAA/func*/betas_*/R2run_sessionBB.nii.gz
+![FRACvalue_sessionBB.nii.gz](https://slite.com/api/files/LKWp7qPOTe/image.png)
+
+### Single-trial GLM results in nativesurface format
+##### nsddata_betas/ppdata/subjAA/nativesurface/betas_*/[lh,rh].betas_sessionBB.hdf5
 
 
 ## 关键词
