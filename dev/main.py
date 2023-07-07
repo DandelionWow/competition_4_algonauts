@@ -6,14 +6,9 @@ clip提取图像特征，左右脑每个ROI分别做线性回归，最后汇总�
 
 import os
 import numpy as np
-from pathlib import Path
 from PIL import Image
 from tqdm import tqdm
 import torch
-from torch.utils.data import DataLoader, Dataset
-# from torchvision.models.feature_extraction import create_feature_extractor, get_graph_node_names
-from torchvision import transforms
-from sklearn.decomposition import IncrementalPCA
 from sklearn.linear_model import LinearRegression
 import clip
 import pickle
@@ -21,60 +16,8 @@ import pickle
 data_dir = '/data/SunYang/datasets/Algonauts_dataset/algonauts_2023_main/algonauts_2023_challenge_data/'
 parent_submission_dir = '/data/SunYang/datasets/Algonauts_dataset/algonauts_2023_main/algonauts_2023_challenge_submission'
 
-device = 'cuda:2' 
-device = torch.device(device)
-
-subj = 1
-
 hemisphere_left = 'left'
 hemisphere_right = 'right'
-
-class argObj:
-  def __init__(self, data_dir, parent_submission_dir, subj):
-    
-    self.subj = format(subj, '02')
-    self.data_dir = os.path.join(data_dir, 'subj'+self.subj)
-    self.parent_submission_dir = parent_submission_dir
-    self.subject_submission_dir = os.path.join(self.parent_submission_dir,
-        'subj'+self.subj)
-
-    # Create the submission directory if not existing
-    if not os.path.isdir(self.subject_submission_dir):
-        os.makedirs(self.subject_submission_dir)
-
-args = argObj(data_dir, parent_submission_dir, subj)
-
-# Stimulus images
-train_img_dir  = os.path.join(args.data_dir, 'training_split', 'training_images')
-test_img_dir  = os.path.join(args.data_dir, 'test_split', 'test_images')
-# Create lists will all training and test image file names, sorted
-train_img_list = os.listdir(train_img_dir)
-train_img_list.sort()
-test_img_list = os.listdir(test_img_dir)
-test_img_list.sort()
-print('\n')
-print('Training images: ' + str(len(train_img_list)))
-print('Test images: ' + str(len(test_img_list)))
-
-# 2.1.1 Create the training, validation and test partitions indices
-rand_seed = 5
-np.random.seed(rand_seed)
-
-# Calculate how many stimulus images correspond to 90% of the training data
-num_train = int(np.round(len(train_img_list) / 100 * 90))
-# Shuffle all training stimulus images
-idxs = np.arange(len(train_img_list))
-np.random.shuffle(idxs)
-# Assign 90% of the shuffled stimulus images to the training partition,
-# and 10% to the test partition
-idxs_train, idxs_val = idxs[:num_train], idxs[num_train:]
-# No need to shuffle or split the test stimulus images
-idxs_test = np.arange(len(test_img_list))
-
-print('\n')
-print('Training stimulus images: ' + format(len(idxs_train)))
-print('Validation stimulus images: ' + format(len(idxs_val)))
-print('Test stimulus images: ' + format(len(idxs_test)))
 
 def preprocess_img(subj, dir):
     device = "cuda:2" if torch.cuda.is_available() else "cpu"
@@ -148,13 +91,6 @@ def consolidate_subj(subj):
 
     return train_data, valid_data, test_data
 
-def get_roi_mapping(data_dir, subj, roi_class, roi):
-    # roi映射
-    roi_map_dir = os.path.join(data_dir, subj, 'roi_masks', 'mapping_'+roi_class+'.npy')
-    roi_map = np.load(roi_map_dir, allow_pickle=True).item()
-    roi_mapping = list(roi_map.keys())[list(roi_map.values()).index(roi)]
-    return roi_mapping
-
 def get_fmri_of_roi(data_dir, subj, hemisphere, train_data, roi_class, roi_mapping):
     # 在challenge_space中划分出roi的点
     challenge_roi_class_dir = os.path.join(data_dir, subj, 'roi_masks', 
@@ -194,6 +130,30 @@ def matrix_add(dict_: dict):
 
     return ret
 
+def get_test_pred_dict_and_roi_map(data_dir, subj, hemisphere_list, roi_class_list):
+    # 用于保存test集的预测结果形式为：{'lh': {'roi_class': {'roi': [...]}}}
+    test_pred_dict = {} 
+    # roi类别的roi映射 key:roi_class value:{roi: map}
+    roi_class_roi_map = {} 
+    
+    for roi_class in roi_class_list:
+        roi_map_dir = os.path.join(data_dir, subj, 'roi_masks', 'mapping_'+roi_class+'.npy')
+        roi_map = np.load(roi_map_dir, allow_pickle=True).item()
+        # 删掉Unknown
+        roi_map.pop(0)
+        
+        # 生成roi类别的roi映射
+        roi_class_roi_map[roi_class] = {v: k for k, v in map(lambda x: (x[0], x[1]), roi_map.items())}
+
+        # 生成 最终结果字典 结构
+        for hemisphere in hemisphere_list:
+            dict_ = {v: None for v in roi_map.values()} # roi作为key
+            if test_pred_dict.get(hemisphere) is None:
+                test_pred_dict[hemisphere] = {roi_class: dict_}
+            else:
+                test_pred_dict[hemisphere][roi_class] = dict_
+
+    return test_pred_dict, roi_class_roi_map
 
 if __name__ == '__main__':
 
@@ -214,33 +174,19 @@ if __name__ == '__main__':
         else:
             train_data, valid_data, test_data = consolidate_subj(subj)
 
-        
+        # 左右脑符号 'lh', 'rh'
         hemisphere_list = [hemisphere_left[0]+'h', hemisphere_right[0]+'h']
-        # , 'floc-faces', 'floc-places', 'floc-words', 'streams'
-        roi_class_list = ['prf-visualrois', 'floc-bodies']
+        # roi类别列表
+        roi_class_list = ['prf-visualrois', 'floc-bodies', 'floc-faces', 'floc-places', 'floc-words', 'streams']
+        # 获取test集的预测结果字典 和 每个roi类别的roi映射
+        test_pred_dict, roi_class_roi_map = get_test_pred_dict_and_roi_map(data_dir, subj, hemisphere_list, roi_class_list)
         
-        test_pred_dict = {}
-        roi_class_roi_map = {} # roi类别的roi映射 key:roi_class value:{roi: map}
-        for roi_class in roi_class_list:
-            roi_map_dir = os.path.join(data_dir, subj, 'roi_masks', 'mapping_'+roi_class+'.npy')
-            roi_map = np.load(roi_map_dir, allow_pickle=True).item()
-            # 删掉Unknown
-            roi_map.pop(0)
-            
-            # 生成roi类别的roi映射
-            roi_class_roi_map[roi_class] = {v: k for k, v in map(lambda x: (x[0], x[1]), roi_map.items())}
-
-            # 生成 最终结果字典 结构
-            for hemisphere in hemisphere_list:
-                dict_ = {v: None for v in roi_map.values()} # roi作为key
-                if test_pred_dict.get(hemisphere) is None:
-                    test_pred_dict[hemisphere] = {roi_class: dict_}
-                else:
-                    test_pred_dict[hemisphere][roi_class] = dict_
-        
+        # 全部做线性回归
         for roi_class, roi_dict in test_pred_dict[hemisphere_list[0]].items():
             for roi in roi_dict.keys():
                 roi_mapping = roi_class_roi_map[roi_class][roi]
+
+                # 线性回归预测
                 test_pred_dict[hemisphere_list[0]][roi_class][roi], \
                 test_pred_dict[hemisphere_list[1]][roi_class][roi] = \
                 linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, roi_mapping)
@@ -249,103 +195,6 @@ if __name__ == '__main__':
         lh_fmri_test_pred = matrix_add(test_pred_dict[hemisphere_list[0]])
         # 汇总test预测结果 rh
         rh_fmri_test_pred = matrix_add(test_pred_dict[hemisphere_list[1]])
-
-        # roi_class prf-visualrois
-        roi_class = 'prf-visualrois'
-        roi_map_dir = os.path.join(data_dir, subj, 'roi_masks', 'mapping_'+roi_class+'.npy')
-        roi_map = np.load(roi_map_dir, allow_pickle=True).item()
-        for roi in roi_map.values():
-            if roi == 'Unknown':
-                continue
-            roi_mapping = list(roi_map.keys())[list(roi_map.values()).index(roi)]
-        
-        
-        lh_fmri_test_pred_V1v, rh_fmri_test_pred_V1v = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'V1v')
-        lh_fmri_test_pred_V1d, rh_fmri_test_pred_V1d = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'V1d')
-        lh_fmri_test_pred_V2v, rh_fmri_test_pred_V2v = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'V2v')
-        lh_fmri_test_pred_V2d, rh_fmri_test_pred_V2d = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'V2d')
-        lh_fmri_test_pred_V3v, rh_fmri_test_pred_V3v = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'V3v')
-        lh_fmri_test_pred_V3d, rh_fmri_test_pred_V3d = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'V3d')
-        lh_fmri_test_pred_hV4, rh_fmri_test_pred_hV4 = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'hV4')
-        lh_fmri_prf_visualrois_test_pred = matrix_add(lh_fmri_test_pred_V1v, lh_fmri_test_pred_V1d, 
-                                                      lh_fmri_test_pred_V2v, lh_fmri_test_pred_V2d, 
-                                                      lh_fmri_test_pred_V3v, lh_fmri_test_pred_V3d, 
-                                                      lh_fmri_test_pred_hV4)
-        rh_fmri_prf_visualrois_test_pred = matrix_add(rh_fmri_test_pred_V1v, rh_fmri_test_pred_V1d, 
-                                                      rh_fmri_test_pred_V2v, rh_fmri_test_pred_V2d, 
-                                                      rh_fmri_test_pred_V3v, rh_fmri_test_pred_V3d, 
-                                                      rh_fmri_test_pred_hV4)
-        # roi_class floc-bodies
-        roi_class = 'floc-bodies'
-        lh_fmri_test_pred_EBA, rh_fmri_test_pred_EBA = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'EBA')
-        lh_fmri_test_pred_FBA_1, rh_fmri_test_pred_FBA_1 = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'FBA-1')
-        lh_fmri_test_pred_FBA_2, rh_fmri_test_pred_FBA_2 = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'FBA-2')
-        lh_fmri_test_pred_mTL_bodies, rh_fmri_test_pred_mTL_bodies = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'mTL-bodies')
-        lh_fmri_floc_bodies_test_pred = matrix_add(lh_fmri_test_pred_EBA, lh_fmri_test_pred_FBA_1, 
-                                                      lh_fmri_test_pred_FBA_2, lh_fmri_test_pred_mTL_bodies)
-        rh_fmri_floc_bodies_test_pred = matrix_add(rh_fmri_test_pred_EBA, rh_fmri_test_pred_FBA_1, 
-                                                      rh_fmri_test_pred_FBA_2, rh_fmri_test_pred_mTL_bodies)
-        # roi_class floc-faces
-        roi_class = 'floc-faces'
-        lh_fmri_test_pred_OFA, rh_fmri_test_pred_OFA = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'OFA')
-        lh_fmri_test_pred_FFA_1, rh_fmri_test_pred_FFA_1 = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'FFA-1')
-        lh_fmri_test_pred_FFA_2, rh_fmri_test_pred_FFA_2 = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'FFA-2')
-        lh_fmri_test_pred_mTL_faces, rh_fmri_test_pred_mTL_faces = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'mTL-faces')
-        lh_fmri_test_pred_aTL_faces, rh_fmri_test_pred_aTL_faces = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'aTL-faces')
-        lh_fmri_floc_faces_test_pred = matrix_add(lh_fmri_test_pred_OFA, lh_fmri_test_pred_FFA_1, 
-                                                      lh_fmri_test_pred_FFA_2, lh_fmri_test_pred_mTL_faces,
-                                                      lh_fmri_test_pred_aTL_faces)
-        rh_fmri_floc_faces_test_pred = matrix_add(rh_fmri_test_pred_OFA, rh_fmri_test_pred_FFA_1, 
-                                                      rh_fmri_test_pred_FFA_2, rh_fmri_test_pred_mTL_faces,
-                                                      rh_fmri_test_pred_aTL_faces)
-        # roi_class floc-places
-        roi_class = 'floc-places'
-        lh_fmri_test_pred_OPA, rh_fmri_test_pred_OPA = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'OPA')
-        lh_fmri_test_pred_PPA, rh_fmri_test_pred_PPA = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'PPA')
-        lh_fmri_test_pred_RSC, rh_fmri_test_pred_RSC = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'RSC')
-        lh_fmri_floc_places_test_pred = matrix_add(lh_fmri_test_pred_OPA, lh_fmri_test_pred_PPA, 
-                                                      lh_fmri_test_pred_RSC)
-        rh_fmri_floc_places_test_pred = matrix_add(rh_fmri_test_pred_OPA, rh_fmri_test_pred_PPA, 
-                                                      rh_fmri_test_pred_RSC)
-        # roi_class floc-words
-        roi_class = 'floc-words'
-        lh_fmri_test_pred_OWFA, rh_fmri_test_pred_OWFA = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'OWFA')
-        lh_fmri_test_pred_VWFA_1, rh_fmri_test_pred_VWFA_1 = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'VWFA-1')
-        lh_fmri_test_pred_VWFA_2, rh_fmri_test_pred_VWFA_2 = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'VWFA-2')
-        lh_fmri_test_pred_mfs_words, rh_fmri_test_pred_mfs_words = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'mfs-words')
-        lh_fmri_test_pred_mTL_words, rh_fmri_test_pred_mTL_words = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'mTL-words')
-        lh_fmri_floc_words_test_pred = matrix_add(lh_fmri_test_pred_OWFA, lh_fmri_test_pred_VWFA_1, 
-                                                      lh_fmri_test_pred_VWFA_2, lh_fmri_test_pred_mfs_words,
-                                                      lh_fmri_test_pred_mTL_words)
-        rh_fmri_floc_words_test_pred = matrix_add(rh_fmri_test_pred_OWFA, rh_fmri_test_pred_VWFA_1, 
-                                                      rh_fmri_test_pred_VWFA_2, rh_fmri_test_pred_mfs_words, 
-                                                      rh_fmri_test_pred_mTL_words)
-        # roi_class streams
-        roi_class = 'streams'
-        lh_fmri_test_pred_early, rh_fmri_test_pred_early = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'early')
-        lh_fmri_test_pred_midventral, rh_fmri_test_pred_midventral = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'midventral')
-        lh_fmri_test_pred_midlateral, rh_fmri_test_pred_midlateral = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'midlateral')
-        lh_fmri_test_pred_midparietal, rh_fmri_test_pred_midparietal = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'midparietal')
-        lh_fmri_test_pred_ventral, rh_fmri_test_pred_ventral = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'ventral')
-        lh_fmri_test_pred_lateral, rh_fmri_test_pred_lateral = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'lateral')
-        lh_fmri_test_pred_parietal, rh_fmri_test_pred_parietal = linear_fit_and_predict(data_dir, subj, train_data, test_data, roi_class, 'parietal')
-        lh_fmri_streams_test_pred = matrix_add(lh_fmri_test_pred_early, lh_fmri_test_pred_midventral, 
-                                                      lh_fmri_test_pred_midlateral, lh_fmri_test_pred_midparietal,
-                                                      lh_fmri_test_pred_ventral, lh_fmri_test_pred_lateral, 
-                                                      lh_fmri_test_pred_parietal)
-        rh_fmri_streams_test_pred = matrix_add(rh_fmri_test_pred_early, rh_fmri_test_pred_midventral, 
-                                                      rh_fmri_test_pred_midlateral, rh_fmri_test_pred_midparietal, 
-                                                      rh_fmri_test_pred_ventral, rh_fmri_test_pred_lateral, 
-                                                      rh_fmri_test_pred_parietal)
-
-        # 汇总test预测结果 lh
-        lh_fmri_test_pred = matrix_add(lh_fmri_prf_visualrois_test_pred, lh_fmri_floc_bodies_test_pred, 
-                                       lh_fmri_floc_faces_test_pred, lh_fmri_floc_places_test_pred, 
-                                       lh_fmri_floc_words_test_pred, lh_fmri_streams_test_pred)
-        # 汇总test预测结果 rh
-        rh_fmri_test_pred = matrix_add(rh_fmri_prf_visualrois_test_pred, rh_fmri_floc_bodies_test_pred, 
-                                       rh_fmri_floc_faces_test_pred, rh_fmri_floc_places_test_pred, 
-                                       rh_fmri_floc_words_test_pred, rh_fmri_streams_test_pred)
 
         # 保存测试结果，用于上传
         lh_fmri_test_pred = lh_fmri_test_pred.astype(np.float32)
