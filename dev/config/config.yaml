@@ -1,0 +1,11 @@
+# config.yaml: define the parameters for the pipeline
+batch_size: 256
+epochs: 10
+device: cuda:2
+learning_rate: 0.001
+
+dataset_path: /data/SunYang/datasets/Algonauts_dataset/algonauts_2023_main/algonauts_2023_challenge_data
+imgs_dir: training_split/training_images
+lh_fmri_dir: training_split/training_fmri/lh_training_fmri.npy
+rh_fmri_dir: training_split/training_fmri/lh_training_fmri.npy
+test_imgs_dir: test_split/test_images
