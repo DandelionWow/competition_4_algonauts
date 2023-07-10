@@ -1,8 +1,8 @@
 # config.yaml: define the parameters for the pipeline
 batch_size: 300
-epochs: 128
-device: cuda:0
-learning_rate: 0.001
+epochs: 32
+device: cuda:1
+learning_rate: 0.0001
 
 dataset_path: /data/SunYang/datasets/Algonauts_dataset/algonauts_2023_main/algonauts_2023_challenge_data
 pkl_path: /data/SunYang/datasets/Algonauts_dataset/pkl_clip

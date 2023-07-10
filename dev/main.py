@@ -39,10 +39,37 @@ def get_test_pred_dict_and_roi_map(data_dir, subj, hemisphere_list, roi_class_li
 
     return test_pred_dict, roi_class_roi_map
 
+def get_challenge_roi(data_dir, subj, hemisphere, roi_class, roi_mapping, device):
+    # 在challenge_space中划分出roi的点
+    challenge_roi_class_dir = os.path.join(data_dir, subj, 'roi_masks', 
+                                           hemisphere+'.'+roi_class+'_challenge_space.npy')
+    challenge_roi_class = np.load(challenge_roi_class_dir)
+    challenge_roi = np.asarray(challenge_roi_class == roi_mapping, dtype=int)
+    challenge_roi = torch.tensor(challenge_roi, dtype=torch.int8).to(device)
+
+    return challenge_roi
+
+def matrix_add(dict_: dict):
+    if dict_ is None or len(dict_) == 0:
+        return None
+    
+    ret = None
+    for roi_dict in dict_.values():
+        for value in roi_dict.values():
+            if ret is None:
+                ret = value
+            else:
+                ret = torch.add(ret, value)
+
+    return ret
 
 def save_test_pred(parent_submission_dir, subj, lh_pred_fmri, rh_pred_fmri):
-    lh_pred_fmri = lh_pred_fmri.cpu().numpy().astype(np.float32)
-    rh_pred_fmri = rh_pred_fmri.cpu().numpy().astype(np.float32)
+    if torch.is_tensor(lh_pred_fmri):
+        lh_pred_fmri = lh_pred_fmri.cpu().numpy()
+    if torch.is_tensor(rh_pred_fmri):
+        rh_pred_fmri = rh_pred_fmri.cpu().numpy()
+    lh_pred_fmri = lh_pred_fmri.astype(np.float32)
+    rh_pred_fmri = rh_pred_fmri.astype(np.float32)
     subject_submission_dir = os.path.join(parent_submission_dir, subj)
     if os.path.exists(subject_submission_dir) is False:
         os.mkdir(subject_submission_dir)
@@ -64,60 +91,77 @@ def main(cfg: config):
         train_data_loader, val_data_loader = create_data_loader(cfg, subj)
         test_data_loader = create_test_data_loader(cfg, subj)
 
-        # 初始化模型
-        img_feature0, lh_fmri0, rh_fmri0 = train_data_loader.dataset.__getitem__(0)
-        lh_model = LinearRegression(len(img_feature0), len(lh_fmri0))
-        rh_model = LinearRegression(len(img_feature0), len(rh_fmri0))
+        # 获取test集的预测结果字典 和 每个roi类别的roi映射
+        test_pred_dict, roi_class_roi_map = get_test_pred_dict_and_roi_map(data_dir, subj, hemisphere_list, roi_class_list)
+        # 全部做线性回归
+        for roi_class, roi_dict in test_pred_dict[hemisphere_list[0]].items():
+            for roi in roi_dict.keys():
+                roi_mapping = roi_class_roi_map[roi_class][roi]
+        
+                lh_challenge_roi = get_challenge_roi(data_dir, subj, hemisphere_list[0], roi_class, roi_mapping, device)
+                rh_challenge_roi = get_challenge_roi(data_dir, subj, hemisphere_list[1], roi_class, roi_mapping, device)
 
-        # move the model to the device
-        lh_model.to(device)
-        rh_model.to(device)
+                # 初始化模型
+                img_feature0, lh_fmri0, rh_fmri0 = train_data_loader.dataset.__getitem__(0)
+                lh_model = LinearRegression(len(img_feature0), len(lh_fmri0))
+                rh_model = LinearRegression(len(img_feature0), len(rh_fmri0))
 
-        # create a criterion and optimizer object with the model and config file
-        lh_criterion, lh_optimizer, lh_scheduler = create_criterion_and_optimizer(
-            lh_model, cfg
-        )
-        rh_criterion, rh_optimizer, rh_scheduler = create_criterion_and_optimizer(
-            rh_model, cfg
-        )
+                # move the model to the device
+                lh_model.to(device)
+                rh_model.to(device)
 
-        # loop over epochs
-        for epoch in range(cfg["epochs"]):
-            print(f"Epoch {epoch+1}/{cfg['epochs']}")
-            print("-" * 10)
-            # train for one epoch
-            train(
-                lh_model,
-                train_data_loader,
-                lh_criterion,
-                lh_optimizer,
-                device,
-                epoch,
-                "left",
-            )
-            train(
-                rh_model,
-                train_data_loader,
-                rh_criterion,
-                rh_optimizer,
-                device,
-                epoch,
-                "right",
-            )
-            # 在每个epoch结束后，调用scheduler.step()来更新学习率
-            lh_scheduler.step()
-            rh_scheduler.step()
+                # create a criterion and optimizer object with the model and config file
+                lh_criterion, lh_optimizer, lh_scheduler = create_criterion_and_optimizer(
+                    lh_model, cfg
+                )
+                rh_criterion, rh_optimizer, rh_scheduler = create_criterion_and_optimizer(
+                    rh_model, cfg
+                )
 
-        with torch.no_grad():
-            # test on the test data 获取测试集结果
-            lh_pred_fmri = test(lh_model, test_data_loader, device)
-            rh_pred_fmri = test(rh_model, test_data_loader, device)
-            # 并保存
-            save_test_pred(parent_submission_dir, subj, lh_pred_fmri, rh_pred_fmri)
+                # loop over epochs
+                for epoch in range(cfg["epochs"]):
+                    print(f"Epoch {epoch+1}/{cfg['epochs']}")
+                    print("-" * 10)
+                    # train for one epoch
+                    train(
+                        lh_model,
+                        train_data_loader,
+                        lh_criterion,
+                        lh_optimizer,
+                        device,
+                        epoch,
+                        hemisphere_list[0],
+                        lh_challenge_roi,
+                    )
+                    train(
+                        rh_model,
+                        train_data_loader,
+                        rh_criterion,
+                        rh_optimizer,
+                        device,
+                        epoch,
+                        hemisphere_list[1],
+                        rh_challenge_roi,
+                    )
+                    # 在每个epoch结束后，调用scheduler.step()来更新学习率
+                    lh_scheduler.step()
+                    rh_scheduler.step()
+
+                with torch.no_grad():
+                    # 获取测试集结果（roi）
+                    test_pred_dict[hemisphere_list[0]][roi_class][roi] = test(lh_model, test_data_loader, device, lh_challenge_roi)
+                    test_pred_dict[hemisphere_list[1]][roi_class][roi] = test(rh_model, test_data_loader, device, rh_challenge_roi)
+        
+        # 汇总结果
+        lh_pred_fmri = matrix_add(test_pred_dict[hemisphere_list[0]])
+        rh_pred_fmri = matrix_add(test_pred_dict[hemisphere_list[1]])
+        # 保存
+        save_test_pred(parent_submission_dir, subj, lh_pred_fmri, rh_pred_fmri)
 
 
 if __name__ == "__main__":
-    config_file = os.path.join(os.getcwd(), "dev", "config", "config.yaml")
+    # 若工作目录更换，这里需要修改
+    config_file = os.path.join(os.getcwd(), "config", "config.yaml")
     cfg = config.load_config(config_file)
 
     data_dir = "/data/SunYang/datasets/Algonauts_dataset/algonauts_2023_main/algonauts_2023_challenge_data/"
@@ -133,7 +177,5 @@ if __name__ == "__main__":
         "floc-words",
         "streams",
     ]
-    # 获取test集的预测结果字典 和 每个roi类别的roi映射
-    # test_pred_dict, roi_class_roi_map = get_test_pred_dict_and_roi_map(data_dir, subj, hemisphere_list, roi_class_list)
 
     main(cfg)

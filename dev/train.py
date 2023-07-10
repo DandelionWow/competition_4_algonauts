@@ -1,6 +1,7 @@
 # train.py: define a function to train the model for one epoch
+import torch
 
-def train(model, data_loader, criterion, optimizer, device, epoch, hemisphere):
+def train(model, data_loader, criterion, optimizer, device, epoch, hemisphere, challenge_roi):
     # set the model to training mode
     model.train()
     # initialize the running loss
@@ -9,7 +10,7 @@ def train(model, data_loader, criterion, optimizer, device, epoch, hemisphere):
     for i, (inputs, lh_fmri, rh_fmri) in enumerate(data_loader):
         # move the inputs and labels to the device
         inputs = inputs.float().to(device)
-        if hemisphere[0]=='l':
+        if hemisphere=='lh':
             labels = lh_fmri.to(device)
         else:
             labels = rh_fmri.to(device)
@@ -17,6 +18,10 @@ def train(model, data_loader, criterion, optimizer, device, epoch, hemisphere):
         optimizer.zero_grad()
         # forward pass
         outputs = model(inputs)
+        
+        labels = torch.mul(labels, challenge_roi)
+        outputs = torch.mul(outputs, challenge_roi)
+
         # compute the loss
         loss = criterion(outputs, labels)
         # backward pass and optimize
