@@ -15,4 +15,4 @@ dev/__pycache__
 dev/models/__pycache__
 
 # log
-dev/log/
+dev/log

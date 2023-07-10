@@ -11,6 +11,6 @@ def create_criterion_and_optimizer(model, config):
     optimizer = optim.Adam(model.parameters(), lr=config['learning_rate'])
 
     # 假设你使用StepLR调整策略，每10个epoch，学习率乘以0.5
-    scheduler = StepLR(optimizer, step_size=8, gamma=0.5)
+    scheduler = StepLR(optimizer, step_size=4, gamma=0.5)
 
     return criterion, optimizer, scheduler

@@ -1,7 +1,7 @@
 # train.py: define a function to train the model for one epoch
 import torch
 
-def train(model, data_loader, criterion, optimizer, device, epoch, hemisphere, challenge_roi):
+def train(model, data_loader, criterion, optimizer, device, epoch, hemisphere, roi_idx):
     # set the model to training mode
     model.train()
     # initialize the running loss
@@ -19,8 +19,8 @@ def train(model, data_loader, criterion, optimizer, device, epoch, hemisphere, c
         # forward pass
         outputs = model(inputs)
         
-        labels = torch.mul(labels, challenge_roi)
-        outputs = torch.mul(outputs, challenge_roi)
+        # 将对应roi的索引值应用到fmri上，消除非该roi的噪声
+        labels = labels[:, roi_idx]
 
         # compute the loss
         loss = criterion(outputs, labels)

@@ -39,28 +39,39 @@ def get_test_pred_dict_and_roi_map(data_dir, subj, hemisphere_list, roi_class_li
 
     return test_pred_dict, roi_class_roi_map
 
-def get_challenge_roi(data_dir, subj, hemisphere, roi_class, roi_mapping, device):
-    # 在challenge_space中划分出roi的点
-    challenge_roi_class_dir = os.path.join(data_dir, subj, 'roi_masks', 
-                                           hemisphere+'.'+roi_class+'_challenge_space.npy')
-    challenge_roi_class = np.load(challenge_roi_class_dir)
-    challenge_roi = np.asarray(challenge_roi_class == roi_mapping, dtype=int)
-    challenge_roi = torch.tensor(challenge_roi, dtype=torch.int8).to(device)
+def get_roi_idx_dict(data_dir, subj, hemisphere_list, roi_class_roi_map, device):
+    roi_idx_dict = {}
+    # 遍历左右脑
+    for hemisphere in hemisphere_list:
+        roi_idx_dict[hemisphere] = {}
+        # 遍历所有roi_class
+        for roi_class, roi_map in roi_class_roi_map.items():
+            # 加载challenge_space
+            challenge_roi_class_dir = os.path.join(data_dir, subj, 'roi_masks', 
+                                                hemisphere+'.'+roi_class+'_challenge_space.npy')
+            challenge_roi_class = np.load(challenge_roi_class_dir)
+            roi_idx_dict[hemisphere][roi_class] = {}
+            # 遍历某个roi_class的所有roi_map
+            for roi, roi_mapping in roi_map.items():
+                # 在challenge_space中找出对应roi的索引
+                fmri_roi_idx = np.where(challenge_roi_class == roi_mapping)[0]
+                fmri_roi_idx = torch.tensor(fmri_roi_idx, dtype=torch.int64).to(device)
+                roi_idx_dict[hemisphere][roi_class][roi] = fmri_roi_idx
+    
+    return roi_idx_dict
 
-    return challenge_roi
 
-def matrix_add(dict_: dict):
-    if dict_ is None or len(dict_) == 0:
+def matrix_add(test_dataset_len, fmri_len, pred_dict: dict, roi_idx_dict: dict, device):
+    if pred_dict is None or len(pred_dict) == 0:
         return None
     
-    ret = None
-    for roi_dict in dict_.values():
-        for value in roi_dict.values():
-            if ret is None:
-                ret = value
-            else:
-                ret = torch.add(ret, value)
+    ret = torch.zeros((test_dataset_len, fmri_len)).to(device)
 
+    for roi_class, roi_dict in pred_dict.items():
+        for roi, value in roi_dict.items():
+            # 这里应该考虑index重复的情况把？后期proof
+            ret[:, roi_idx_dict[roi_class][roi]] = value
+            
     return ret
 
 def save_test_pred(parent_submission_dir, subj, lh_pred_fmri, rh_pred_fmri):
@@ -90,21 +101,26 @@ def main(cfg: config):
         # create a data loader object with the config file
         train_data_loader, val_data_loader = create_data_loader(cfg, subj)
         test_data_loader = create_test_data_loader(cfg, subj)
+        _, lh_fmri, rh_fmri = train_data_loader.dataset.__getitem__(0)
+        lh_fmri_len = len(lh_fmri)
+        rh_fmri_len = len(rh_fmri)
+        test_dataset_len = len(test_data_loader.dataset)
 
         # 获取test集的预测结果字典 和 每个roi类别的roi映射
         test_pred_dict, roi_class_roi_map = get_test_pred_dict_and_roi_map(data_dir, subj, hemisphere_list, roi_class_list)
+        # 获取每个roi对应fmri数据中的索引
+        roi_idx_dict = get_roi_idx_dict(data_dir, subj, hemisphere_list, roi_class_roi_map, device)
+                 
         # 全部做线性回归
         for roi_class, roi_dict in test_pred_dict[hemisphere_list[0]].items():
             for roi in roi_dict.keys():
-                roi_mapping = roi_class_roi_map[roi_class][roi]
-        
-                lh_challenge_roi = get_challenge_roi(data_dir, subj, hemisphere_list[0], roi_class, roi_mapping, device)
-                rh_challenge_roi = get_challenge_roi(data_dir, subj, hemisphere_list[1], roi_class, roi_mapping, device)
+                # 加载roi对应fmri中的索引
+                lh_roi_idx = roi_idx_dict[hemisphere_list[0]][roi_class][roi]
+                rh_roi_idx = roi_idx_dict[hemisphere_list[1]][roi_class][roi]
 
                 # 初始化模型
-                img_feature0, lh_fmri0, rh_fmri0 = train_data_loader.dataset.__getitem__(0)
-                lh_model = LinearRegression(len(img_feature0), len(lh_fmri0))
-                rh_model = LinearRegression(len(img_feature0), len(rh_fmri0))
+                lh_model = LinearRegression(cfg["img_feature_dim"], len(lh_roi_idx))
+                rh_model = LinearRegression(cfg["img_feature_dim"], len(rh_roi_idx))
 
                 # move the model to the device
                 lh_model.to(device)
@@ -131,7 +147,7 @@ def main(cfg: config):
                         device,
                         epoch,
                         hemisphere_list[0],
-                        lh_challenge_roi,
+                        lh_roi_idx,
                     )
                     train(
                         rh_model,
@@ -141,7 +157,7 @@ def main(cfg: config):
                         device,
                         epoch,
                         hemisphere_list[1],
-                        rh_challenge_roi,
+                        rh_roi_idx,
                     )
                     # 在每个epoch结束后，调用scheduler.step()来更新学习率
                     lh_scheduler.step()
@@ -149,12 +165,12 @@ def main(cfg: config):
 
                 with torch.no_grad():
                     # 获取测试集结果（roi）
-                    test_pred_dict[hemisphere_list[0]][roi_class][roi] = test(lh_model, test_data_loader, device, lh_challenge_roi)
-                    test_pred_dict[hemisphere_list[1]][roi_class][roi] = test(rh_model, test_data_loader, device, rh_challenge_roi)
+                    test_pred_dict[hemisphere_list[0]][roi_class][roi] = test(lh_model, test_data_loader, device)
+                    test_pred_dict[hemisphere_list[1]][roi_class][roi] = test(rh_model, test_data_loader, device)
         
         # 汇总结果
-        lh_pred_fmri = matrix_add(test_pred_dict[hemisphere_list[0]])
-        rh_pred_fmri = matrix_add(test_pred_dict[hemisphere_list[1]])
+        lh_pred_fmri = matrix_add(test_dataset_len, lh_fmri_len, test_pred_dict[hemisphere_list[0]], roi_idx_dict[hemisphere_list[0]], device)
+        rh_pred_fmri = matrix_add(test_dataset_len, rh_fmri_len, test_pred_dict[hemisphere_list[1]], roi_idx_dict[hemisphere_list[1]], device)
         # 保存
         save_test_pred(parent_submission_dir, subj, lh_pred_fmri, rh_pred_fmri)
 
