@@ -4,7 +4,7 @@ import os
 import torch
 import config
 from dataloader import create_data_loader, create_test_data_loader
-from models.linear_reg import LinearRegression
+from models.linear_reg import LinearRegression, LinearRegression3Layer
 from loss import create_criterion_and_optimizer
 from train import train
 from test import test
@@ -60,6 +60,25 @@ def get_roi_idx_dict(data_dir, subj, hemisphere_list, roi_class_roi_map, device)
     
     return roi_idx_dict
 
+def train_and_predict(train_data_loader, test_data_loader, model, roi_idx, hemisphere, device, config):
+    # move the model to the device
+    model.to(device)
+
+    # create a criterion and optimizer object with the model and config file
+    criterion, optimizer, scheduler = create_criterion_and_optimizer(model, config)
+
+    # loop over epochs
+    for epoch in range(config["epochs"]):
+        print(f"Epoch {epoch+1}/{config['epochs']}")
+        print("-" * 10)
+        # train for one epoch
+        train(model, train_data_loader, criterion, optimizer, device, epoch, hemisphere, roi_idx)
+        # 在每个epoch结束后，调用scheduler.step()来更新学习率
+        scheduler.step()
+
+    with torch.no_grad():
+        # 获取测试集结果（roi）
+        return test(model, test_data_loader, device)
 
 def matrix_add(test_dataset_len, fmri_len, pred_dict: dict, roi_idx_dict: dict, device):
     if pred_dict is None or len(pred_dict) == 0:
@@ -69,7 +88,7 @@ def matrix_add(test_dataset_len, fmri_len, pred_dict: dict, roi_idx_dict: dict, 
 
     for roi_class, roi_dict in pred_dict.items():
         for roi, value in roi_dict.items():
-            # 这里应该考虑index重复的情况把？后期proof
+            # 这里应该考虑index重复的情况把？
             ret[:, roi_idx_dict[roi_class][roi]] = value
             
     return ret
@@ -81,7 +100,7 @@ def save_test_pred(parent_submission_dir, subj, lh_pred_fmri, rh_pred_fmri):
         rh_pred_fmri = rh_pred_fmri.cpu().numpy()
     lh_pred_fmri = lh_pred_fmri.astype(np.float32)
     rh_pred_fmri = rh_pred_fmri.astype(np.float32)
-    subject_submission_dir = os.path.join(parent_submission_dir, subj)
+    subject_submission_dir = os.path.join(parent_submission_dir, subj+'_')
     if os.path.exists(subject_submission_dir) is False:
         os.mkdir(subject_submission_dir)
     np.save(os.path.join(subject_submission_dir, "lh_pred_test.npy"), lh_pred_fmri)
@@ -94,7 +113,7 @@ def main(cfg: config):
 
     for subj in range(1, 9):
         print(f"subj {subj}/{8}")
-        print("-" * 20)
+        print("-" * 40)
 
         subj = "subj" + format(subj, "02")
 
@@ -114,59 +133,26 @@ def main(cfg: config):
         # 全部做线性回归
         for roi_class, roi_dict in test_pred_dict[hemisphere_list[0]].items():
             for roi in roi_dict.keys():
-                # 加载roi对应fmri中的索引
-                lh_roi_idx = roi_idx_dict[hemisphere_list[0]][roi_class][roi]
-                rh_roi_idx = roi_idx_dict[hemisphere_list[1]][roi_class][roi]
+                # 做线性回归的roi
+                if roi in roi_list_4_linear:
+                    print(f"roi: {roi}")
+                    print("-" * 20)
 
-                # 初始化模型
-                lh_model = LinearRegression(cfg["img_feature_dim"], len(lh_roi_idx))
-                rh_model = LinearRegression(cfg["img_feature_dim"], len(rh_roi_idx))
+                    # 加载roi对应fmri中的索引
+                    lh_roi_idx = roi_idx_dict[hemisphere_list[0]][roi_class][roi]
+                    rh_roi_idx = roi_idx_dict[hemisphere_list[1]][roi_class][roi]
 
-                # move the model to the device
-                lh_model.to(device)
-                rh_model.to(device)
+                    # 初始化模型
+                    lh_model = LinearRegression3Layer(cfg["img_feature_dim"], len(lh_roi_idx))
+                    rh_model = LinearRegression3Layer(cfg["img_feature_dim"], len(rh_roi_idx))
 
-                # create a criterion and optimizer object with the model and config file
-                lh_criterion, lh_optimizer, lh_scheduler = create_criterion_and_optimizer(
-                    lh_model, cfg
-                )
-                rh_criterion, rh_optimizer, rh_scheduler = create_criterion_and_optimizer(
-                    rh_model, cfg
-                )
-
-                # loop over epochs
-                for epoch in range(cfg["epochs"]):
-                    print(f"Epoch {epoch+1}/{cfg['epochs']}")
-                    print("-" * 10)
-                    # train for one epoch
-                    train(
-                        lh_model,
-                        train_data_loader,
-                        lh_criterion,
-                        lh_optimizer,
-                        device,
-                        epoch,
-                        hemisphere_list[0],
-                        lh_roi_idx,
-                    )
-                    train(
-                        rh_model,
-                        train_data_loader,
-                        rh_criterion,
-                        rh_optimizer,
-                        device,
-                        epoch,
-                        hemisphere_list[1],
-                        rh_roi_idx,
-                    )
-                    # 在每个epoch结束后，调用scheduler.step()来更新学习率
-                    lh_scheduler.step()
-                    rh_scheduler.step()
-
-                with torch.no_grad():
-                    # 获取测试集结果（roi）
-                    test_pred_dict[hemisphere_list[0]][roi_class][roi] = test(lh_model, test_data_loader, device)
-                    test_pred_dict[hemisphere_list[1]][roi_class][roi] = test(rh_model, test_data_loader, device)
+                    # 训练和预测
+                    test_pred_dict[hemisphere_list[0]][roi_class][roi] = train_and_predict(train_data_loader, test_data_loader, 
+                                                                                           lh_model, lh_roi_idx, hemisphere_list[0], 
+                                                                                           device, cfg)
+                    test_pred_dict[hemisphere_list[1]][roi_class][roi] = train_and_predict(train_data_loader, test_data_loader, 
+                                                                                           rh_model, rh_roi_idx, hemisphere_list[1], 
+                                                                                           device, cfg)
         
         # 汇总结果
         lh_pred_fmri = matrix_add(test_dataset_len, lh_fmri_len, test_pred_dict[hemisphere_list[0]], roi_idx_dict[hemisphere_list[0]], device)
@@ -193,5 +179,12 @@ if __name__ == "__main__":
         "floc-words",
         "streams",
     ]
+    # 不同roi建模可在此声明roi列表，在for中使用if roi in roi_list判断
+    roi_list_4_linear = ['V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d', 'hV4',
+                       'EBA', 'FBA-1', 'FBA-2', 'mTL-bodies',
+                       'OFA', 'FFA-1', 'FFA-2', 'mTL-faces', 'aTL-faces',
+                       'OPA', 'PPA', 'RSC',
+                       'OWFA', 'VWFA-1', 'VWFA-2', 'mfs-words', 'mTL-words',
+                       'early', 'midventral', 'midlateral', 'midparietal', 'ventral', 'lateral', 'parietal']
 
     main(cfg)
