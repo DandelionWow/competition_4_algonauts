@@ -9,3 +9,7 @@ algonauts_2023_challenge_tutorial.ipynb
 
 # dataset_info
 dataset_info.md
+
+# python runtime
+dev/__pycache__
+dev/models/__pycache__

@@ -5,7 +5,7 @@ import torchvision.transforms as transforms
 from dataset import AlgonautsDataset
 
 # 训练集
-def create_data_loader(config):
+def create_data_loader(config, subj):
     # create a transform function to resize and normalize the images
     transform = transforms.Compose([
         # transforms.Resize(256),
@@ -14,13 +14,13 @@ def create_data_loader(config):
         # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
-    imgs_dir = os.path.join(config['dataset_path'], config['imgs_dir'])
-    lh_fmri_dir = os.path.join(config['dataset_path'], config['lh_fmri_dir'])
-    rh_fmri_dir = os.path.join(config['dataset_path'], config['rh_fmri_dir'])
+    imgs_dir = os.path.join(config['pkl_path'], subj, config['train_imgs_feature_file'])
+    lh_fmri_dir = os.path.join(config['dataset_path'], subj, config['lh_fmri_dir'])
+    rh_fmri_dir = os.path.join(config['dataset_path'], subj, config['rh_fmri_dir'])
 
     # create a custom dataset object with the given image directory and annotation file
     dataset = AlgonautsDataset(imgs_dir=imgs_dir, lh_fmri_dir=lh_fmri_dir, 
-                               rh_fmri_dir=rh_fmri_dir, transform=transform)
+                               rh_fmri_dir=rh_fmri_dir, transform=None)
     
     # get the size of the whole dataset
     dataset_size = len(dataset)
@@ -38,7 +38,7 @@ def create_data_loader(config):
     return train_data_loader, val_data_loader
 
 # 测试集
-def create_test_data_loader(config):
+def create_test_data_loader(config, subj):
     # create a transform function to resize and normalize the images
     transform = transforms.Compose([
         # transforms.Resize(256),
@@ -47,11 +47,11 @@ def create_test_data_loader(config):
         # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
     ])
 
-    imgs_dir = os.path.join(config['dataset_path'], config['test_imgs_dir'])
+    imgs_dir = os.path.join(config['pkl_path'], subj, config['test_imgs_feature_dir'])
 
     # create a custom dataset object with the given image directory and annotation file
     dataset = AlgonautsDataset(imgs_dir=imgs_dir, lh_fmri_dir=None, 
-                               rh_fmri_dir=None, transform=transform)
+                               rh_fmri_dir=None, transform=None)
     
     # create a data loader object for the train subset with the parameters from config file
     test_data_loader = DataLoader(dataset, batch_size=config['batch_size'], shuffle=False, num_workers=4)
