@@ -16,3 +16,6 @@ dev/models/__pycache__
 
 # log
 dev/log
+
+# results
+results/
