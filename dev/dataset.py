@@ -47,3 +47,36 @@ class AlgonautsDataset(Dataset):
 
     def __len__(self):
         return len(self.imgs_feature)
+    
+class AlgonautsDataset4CNN(Dataset):
+    def __init__(self, imgs_dir, lh_fmri_dir=None, rh_fmri_dir=None, transform=None):
+        self.imgs_dir = imgs_dir
+        
+        # 图片特征
+        self.img_list = os.listdir(imgs_dir)
+        self.img_list.sort()
+        # fmri左右脑数据
+        self.lh_fmri = np.load(lh_fmri_dir) if lh_fmri_dir is not None else None
+        self.rh_fmri = np.load(rh_fmri_dir) if rh_fmri_dir is not None else None
+        
+        # 如果有转换方法，就保存下来
+        self.transform = transform
+
+    def __getitem__(self, index):
+        # 读取图像
+        img = Image.open(os.path.join(self.imgs_dir, self.img_list[index]))
+        img = img.convert('RGB')
+        # 如果有转换方法，就对图像进行转换，比如裁剪、缩放、归一化等
+        if self.transform:
+            img = self.transform(img)
+
+        if self.lh_fmri is not None and self.lh_fmri is not None:
+            lh_fmri = self.lh_fmri[index]
+            rh_fmri = self.rh_fmri[index]
+
+            return img, lh_fmri, rh_fmri
+        else:
+            return img
+
+    def __len__(self):
+        return len(self.img_list)

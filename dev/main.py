@@ -3,7 +3,8 @@
 import os
 import torch
 import config
-from dataloader import create_data_loader, create_test_data_loader
+from dataloader import create_data_loader, create_data_loader_4_cnn, create_test_data_loader, create_test_data_loader_4_cnn
+from models.cnn_linear import CNNModel
 from models.linear_reg import LinearRegression, LinearRegression3Layer
 from loss import create_criterion_and_optimizer
 from train import train
@@ -118,8 +119,8 @@ def main(cfg: config):
         subj = "subj" + format(subj, "02")
 
         # create a data loader object with the config file
-        train_data_loader, val_data_loader = create_data_loader(cfg, subj)
-        test_data_loader = create_test_data_loader(cfg, subj)
+        train_data_loader, val_data_loader = create_data_loader_4_cnn(cfg, subj)
+        test_data_loader = create_test_data_loader_4_cnn(cfg, subj)
         _, lh_fmri, rh_fmri = train_data_loader.dataset.__getitem__(0)
         lh_fmri_len = len(lh_fmri)
         rh_fmri_len = len(rh_fmri)
@@ -143,8 +144,8 @@ def main(cfg: config):
                     rh_roi_idx = roi_idx_dict[hemisphere_list[1]][roi_class][roi]
 
                     # 初始化模型
-                    lh_model = LinearRegression3Layer(cfg["img_feature_dim"], len(lh_roi_idx))
-                    rh_model = LinearRegression3Layer(cfg["img_feature_dim"], len(rh_roi_idx))
+                    lh_model = CNNModel(len(lh_roi_idx))
+                    rh_model = CNNModel(len(rh_roi_idx))
 
                     # 训练和预测
                     test_pred_dict[hemisphere_list[0]][roi_class][roi] = train_and_predict(train_data_loader, test_data_loader, 
@@ -180,11 +181,13 @@ if __name__ == "__main__":
         "streams",
     ]
     # 不同roi建模可在此声明roi列表，在for中使用if roi in roi_list判断
-    roi_list_4_linear = ['V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d', 'hV4',
-                       'EBA', 'FBA-1', 'FBA-2', 'mTL-bodies',
-                       'OFA', 'FFA-1', 'FFA-2', 'mTL-faces', 'aTL-faces',
-                       'OPA', 'PPA', 'RSC',
-                       'OWFA', 'VWFA-1', 'VWFA-2', 'mfs-words', 'mTL-words',
-                       'early', 'midventral', 'midlateral', 'midparietal', 'ventral', 'lateral', 'parietal']
+    roi_list_4_linear = [
+        'V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d', 'hV4',
+        'EBA', 'FBA-1', 'FBA-2', 'mTL-bodies',
+        'OFA', 'FFA-1', 'FFA-2', 'mTL-faces', 'aTL-faces',
+        'OPA', 'PPA', 'RSC',
+        'OWFA', 'VWFA-1', 'VWFA-2', 'mfs-words', 'mTL-words',
+        'early', 'midventral', 'midlateral', 'midparietal', 'ventral', 'lateral', 'parietal'
+    ]
 
     main(cfg)
