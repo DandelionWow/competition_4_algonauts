@@ -74,11 +74,5 @@ dependencies:
   - yaml=0.2.5=h7b6447c_0
   - zlib=1.2.13=h5eee18b_0
   - zstd=1.4.9=haebb681_0
-  - pip:
-    - clip==1.0
-    - ftfy==6.1.1
-    - regex==2023.6.3
-    - tqdm==4.65.0
-    - wcwidth==0.2.6
-prefix: /home/SunYang/.conda/envs/Algonauts_ENV
+prefix: /home/xxx/.conda/envs/Algonauts_ENV
 
