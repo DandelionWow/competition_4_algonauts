@@ -3,7 +3,7 @@ img_feature_dim: 512
 batch_size: 128
 epochs: 32
 device: cuda:1
-learning_rate: 0.1
+learning_rate: 0.001
 
 dataset_path: /data/SunYang/datasets/Algonauts_dataset/algonauts_2023_main/algonauts_2023_challenge_data
 pkl_path: /data/SunYang/datasets/Algonauts_dataset/pkl_clip
@@ -13,3 +13,4 @@ lh_fmri_dir: training_split/training_fmri/lh_training_fmri.npy
 rh_fmri_dir: training_split/training_fmri/rh_training_fmri.npy
 test_imgs_dir: test_split/test_images
 test_imgs_feature_dir: test_imgs_feature.npy
+parent_submission_dir: /data/SunYang/datasets/Algonauts_dataset/algonauts_2023_main/algonauts_2023_challenge_submission

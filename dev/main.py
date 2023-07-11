@@ -101,7 +101,7 @@ def save_test_pred(parent_submission_dir, subj, lh_pred_fmri, rh_pred_fmri):
         rh_pred_fmri = rh_pred_fmri.cpu().numpy()
     lh_pred_fmri = lh_pred_fmri.astype(np.float32)
     rh_pred_fmri = rh_pred_fmri.astype(np.float32)
-    subject_submission_dir = os.path.join(parent_submission_dir, subj+'_')
+    subject_submission_dir = os.path.join(parent_submission_dir, subj)
     if os.path.exists(subject_submission_dir) is False:
         os.mkdir(subject_submission_dir)
     np.save(os.path.join(subject_submission_dir, "lh_pred_test.npy"), lh_pred_fmri)
@@ -127,9 +127,9 @@ def main(cfg: config):
         test_dataset_len = len(test_data_loader.dataset)
 
         # 获取test集的预测结果字典 和 每个roi类别的roi映射
-        test_pred_dict, roi_class_roi_map = get_test_pred_dict_and_roi_map(data_dir, subj, hemisphere_list, roi_class_list)
+        test_pred_dict, roi_class_roi_map = get_test_pred_dict_and_roi_map(cfg['dataset_path'], subj, hemisphere_list, roi_class_list)
         # 获取每个roi对应fmri数据中的索引
-        roi_idx_dict = get_roi_idx_dict(data_dir, subj, hemisphere_list, roi_class_roi_map, device)
+        roi_idx_dict = get_roi_idx_dict(cfg['dataset_path'], subj, hemisphere_list, roi_class_roi_map, device)
                  
         # 全部做线性回归
         for roi_class, roi_dict in test_pred_dict[hemisphere_list[0]].items():
@@ -159,7 +159,7 @@ def main(cfg: config):
         lh_pred_fmri = matrix_add(test_dataset_len, lh_fmri_len, test_pred_dict[hemisphere_list[0]], roi_idx_dict[hemisphere_list[0]], device)
         rh_pred_fmri = matrix_add(test_dataset_len, rh_fmri_len, test_pred_dict[hemisphere_list[1]], roi_idx_dict[hemisphere_list[1]], device)
         # 保存
-        save_test_pred(parent_submission_dir, subj, lh_pred_fmri, rh_pred_fmri)
+        save_test_pred(cfg['parent_submission_dir'], subj, lh_pred_fmri, rh_pred_fmri)
 
 
 if __name__ == "__main__":
@@ -167,8 +167,6 @@ if __name__ == "__main__":
     config_file = os.path.join(os.getcwd(), "config", "config.yaml")
     cfg = config.load_config(config_file)
 
-    data_dir = "/data/SunYang/datasets/Algonauts_dataset/algonauts_2023_main/algonauts_2023_challenge_data/"
-    parent_submission_dir = "/data/SunYang/datasets/Algonauts_dataset/algonauts_2023_main/algonauts_2023_challenge_submission"
     # 左右脑符号 'lh', 'rh'
     hemisphere_list = ["lh", "rh"]
     # roi类别列表
@@ -183,11 +181,11 @@ if __name__ == "__main__":
     # 不同roi建模可在此声明roi列表，在for中使用if roi in roi_list判断
     roi_list_4_linear = [
         'V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d', 'hV4',
-        'EBA', 'FBA-1', 'FBA-2', 'mTL-bodies',
-        'OFA', 'FFA-1', 'FFA-2', 'mTL-faces', 'aTL-faces',
-        'OPA', 'PPA', 'RSC',
-        'OWFA', 'VWFA-1', 'VWFA-2', 'mfs-words', 'mTL-words',
-        'early', 'midventral', 'midlateral', 'midparietal', 'ventral', 'lateral', 'parietal'
+        # 'EBA', 'FBA-1', 'FBA-2', 'mTL-bodies',
+        # 'OFA', 'FFA-1', 'FFA-2', 'mTL-faces', 'aTL-faces',
+        # 'OPA', 'PPA', 'RSC',
+        # 'OWFA', 'VWFA-1', 'VWFA-2', 'mfs-words', 'mTL-words',
+        # 'early', 'midventral', 'midlateral', 'midparietal', 'ventral', 'lateral', 'parietal'
     ]
 
     main(cfg)
