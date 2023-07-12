@@ -1,7 +1,7 @@
 # config.yaml: define the parameters for the pipeline
 img_feature_dim: 512
-batch_size: 128
-epochs: 32
+batch_size: 32
+epochs: 2
 device: cuda:1
 learning_rate: 0.001
 

@@ -4,6 +4,7 @@ import os
 import torch
 import config
 from dataloader import create_data_loader, create_data_loader_4_cnn, create_test_data_loader, create_test_data_loader_4_cnn
+from models.vgg16_linear import get_model
 from models.cnn_linear import CNNModel
 from models.linear_reg import LinearRegression, LinearRegression3Layer
 from loss import create_criterion_and_optimizer
@@ -89,6 +90,9 @@ def matrix_add(test_dataset_len, fmri_len, pred_dict: dict, roi_idx_dict: dict, 
 
     for roi_class, roi_dict in pred_dict.items():
         for roi, value in roi_dict.items():
+            # 跳过未预测的roi
+            if value is None:
+                continue
             # 这里应该考虑index重复的情况把？
             ret[:, roi_idx_dict[roi_class][roi]] = value
             
@@ -101,7 +105,7 @@ def save_test_pred(parent_submission_dir, subj, lh_pred_fmri, rh_pred_fmri):
         rh_pred_fmri = rh_pred_fmri.cpu().numpy()
     lh_pred_fmri = lh_pred_fmri.astype(np.float32)
     rh_pred_fmri = rh_pred_fmri.astype(np.float32)
-    subject_submission_dir = os.path.join(parent_submission_dir, subj)
+    subject_submission_dir = os.path.join(parent_submission_dir, subj+'_')
     if os.path.exists(subject_submission_dir) is False:
         os.mkdir(subject_submission_dir)
     np.save(os.path.join(subject_submission_dir, "lh_pred_test.npy"), lh_pred_fmri)
@@ -112,7 +116,7 @@ def main(cfg: config):
     # check if cuda is available and set the device accordingly
     device = torch.device(cfg["device"] if torch.cuda.is_available() else "cpu")
 
-    for subj in range(1, 9):
+    for subj in range(3, 5):
         print(f"subj {subj}/{8}")
         print("-" * 40)
 
@@ -131,7 +135,7 @@ def main(cfg: config):
         # 获取每个roi对应fmri数据中的索引
         roi_idx_dict = get_roi_idx_dict(cfg['dataset_path'], subj, hemisphere_list, roi_class_roi_map, device)
                  
-        # 全部做线性回归
+        # 遍历
         for roi_class, roi_dict in test_pred_dict[hemisphere_list[0]].items():
             for roi in roi_dict.keys():
                 # 做线性回归的roi
@@ -144,8 +148,8 @@ def main(cfg: config):
                     rh_roi_idx = roi_idx_dict[hemisphere_list[1]][roi_class][roi]
 
                     # 初始化模型
-                    lh_model = CNNModel(len(lh_roi_idx))
-                    rh_model = CNNModel(len(rh_roi_idx))
+                    lh_model = get_model(len(lh_roi_idx))
+                    rh_model = get_model(len(rh_roi_idx))
 
                     # 训练和预测
                     test_pred_dict[hemisphere_list[0]][roi_class][roi] = train_and_predict(train_data_loader, test_data_loader, 
@@ -181,11 +185,11 @@ if __name__ == "__main__":
     # 不同roi建模可在此声明roi列表，在for中使用if roi in roi_list判断
     roi_list_4_linear = [
         'V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d', 'hV4',
-        # 'EBA', 'FBA-1', 'FBA-2', 'mTL-bodies',
-        # 'OFA', 'FFA-1', 'FFA-2', 'mTL-faces', 'aTL-faces',
-        # 'OPA', 'PPA', 'RSC',
-        # 'OWFA', 'VWFA-1', 'VWFA-2', 'mfs-words', 'mTL-words',
-        # 'early', 'midventral', 'midlateral', 'midparietal', 'ventral', 'lateral', 'parietal'
+        'EBA', 'FBA-1', 'FBA-2', 'mTL-bodies',
+        'OFA', 'FFA-1', 'FFA-2', 'mTL-faces', 'aTL-faces',
+        'OPA', 'PPA', 'RSC',
+        'OWFA', 'VWFA-1', 'VWFA-2', 'mfs-words', 'mTL-words',
+        'early', 'midventral', 'midlateral', 'midparietal', 'ventral', 'lateral', 'parietal'
     ]
 
     main(cfg)

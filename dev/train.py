@@ -29,7 +29,7 @@ def train(model, data_loader, criterion, optimizer, device, epoch, hemisphere, r
         optimizer.step()
         # update the running loss
         running_loss += loss.item()
-        # print statistics every 200 batches
+        # print statistics every 10 batches
         if (i + 1) % 10 == 0:
             print('[%d, %5d] loss: %.3f' %
                   (epoch + 1, i + 1, running_loss / 10))
