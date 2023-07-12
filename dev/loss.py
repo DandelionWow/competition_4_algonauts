@@ -10,7 +10,7 @@ def create_criterion_and_optimizer(model, config):
     # create an Adam optimizer with the given learning rate
     optimizer = optim.Adam(model.parameters(), lr=config['learning_rate'])
 
-    # 假设你使用StepLR调整策略，每4个epoch，学习率乘以0.5
-    scheduler = StepLR(optimizer, step_size=16, gamma=0.5)
+    # 使用StepLR调整策略，每4个epoch，学习率乘以0.5
+    scheduler = StepLR(optimizer, step_size=int(config['epochs']/2), gamma=0.5)
 
     return criterion, optimizer, scheduler

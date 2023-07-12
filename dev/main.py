@@ -4,7 +4,8 @@ import os
 import torch
 import config
 from dataloader import create_data_loader, create_data_loader_4_cnn, create_test_data_loader, create_test_data_loader_4_cnn
-from models.vgg16_linear import get_model
+# from models.vgg16_linear import get_model
+from models.alexnet_linear import get_model
 from models.cnn_linear import CNNModel
 from models.linear_reg import LinearRegression, LinearRegression3Layer
 from loss import create_criterion_and_optimizer
@@ -76,7 +77,7 @@ def train_and_predict(train_data_loader, test_data_loader, model, roi_idx, hemis
         # train for one epoch
         train(model, train_data_loader, criterion, optimizer, device, epoch, hemisphere, roi_idx)
         # 在每个epoch结束后，调用scheduler.step()来更新学习率
-        scheduler.step()
+        # scheduler.step()
 
     with torch.no_grad():
         # 获取测试集结果（roi）
@@ -116,7 +117,7 @@ def main(cfg: config):
     # check if cuda is available and set the device accordingly
     device = torch.device(cfg["device"] if torch.cuda.is_available() else "cpu")
 
-    for subj in range(3, 5):
+    for subj in range(1, 2):
         print(f"subj {subj}/{8}")
         print("-" * 40)
 
@@ -168,7 +169,7 @@ def main(cfg: config):
 
 if __name__ == "__main__":
     # 若工作目录更换，这里需要修改
-    config_file = os.path.join(os.getcwd(), "config", "config.yaml")
+    config_file = os.path.join(os.getcwd(), 'dev', "config", "config.yaml")
     cfg = config.load_config(config_file)
 
     # 左右脑符号 'lh', 'rh'
