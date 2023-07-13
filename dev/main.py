@@ -3,14 +3,25 @@
 import os
 import torch
 import config
-from dataloader import create_data_loader, create_data_loader_4_cnn, create_test_data_loader, create_test_data_loader_4_cnn
-# from models.vgg16_linear import get_model
-from models.alexnet_linear import get_model
+from dataloader import (
+    create_data_loader, 
+    create_data_loader_4_cnn, 
+    create_test_data_loader, 
+    create_test_data_loader_4_cnn,
+    create_test_data_loader_4_resnet,
+    create_test_data_loader_4_vgg,
+    create_data_loader_4_resnet,
+    create_data_loader_4_vgg,
+)
+from models.vgg16_linear import get_model
+# from models.alexnet_linear import get_model
+# from models.resnet_linear import get_model
 from models.cnn_linear import CNNModel
 from models.linear_reg import LinearRegression, LinearRegression3Layer
 from loss import create_criterion_and_optimizer
 from train import train
 from test import test
+from valid import valid
 import numpy as np
 
 def get_test_pred_dict_and_roi_map(data_dir, subj, hemisphere_list, roi_class_list):
@@ -63,23 +74,29 @@ def get_roi_idx_dict(data_dir, subj, hemisphere_list, roi_class_roi_map, device)
     
     return roi_idx_dict
 
-def train_and_predict(train_data_loader, test_data_loader, model, roi_idx, hemisphere, device, config):
+def train_and_predict(train_data_loader, val_data_loader, test_data_loader, model, roi_idx, roi, hemisphere, device, config):
     # move the model to the device
     model.to(device)
 
     # create a criterion and optimizer object with the model and config file
     criterion, optimizer, scheduler = create_criterion_and_optimizer(model, config)
 
+    # 加载checkpoint
+    epoch_, model, optimizer = load_checkpoint(model, optimizer, hemisphere, roi, config)
     # loop over epochs
-    for epoch in range(config["epochs"]):
+    for epoch in range(epoch_, config["epochs"]): 
         print(f"Epoch {epoch+1}/{config['epochs']}")
         print("-" * 10)
         # train for one epoch
         train(model, train_data_loader, criterion, optimizer, device, epoch, hemisphere, roi_idx)
         # 在每个epoch结束后，调用scheduler.step()来更新学习率
         # scheduler.step()
+        # 保存checkpoint
+        save_checkpoint(epoch+1, model, optimizer, hemisphere, roi, config)
 
     with torch.no_grad():
+        # valid
+        valid(model, val_data_loader, criterion, device, hemisphere, roi_idx)
         # 获取测试集结果（roi）
         return test(model, test_data_loader, device)
 
@@ -112,20 +129,42 @@ def save_test_pred(parent_submission_dir, subj, lh_pred_fmri, rh_pred_fmri):
     np.save(os.path.join(subject_submission_dir, "lh_pred_test.npy"), lh_pred_fmri)
     np.save(os.path.join(subject_submission_dir, "rh_pred_test.npy"), rh_pred_fmri)
 
+def save_checkpoint(epoch, model, optimizer, hemisphere, roi, config):
+    if config['is_save_checkpoint'] == 1:
+        torch.save(
+            {
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+            },
+            os.path.join(config['checkpoint_path'], 'model_'+hemisphere+'_'+roi+'.pt')
+        )
+
+def load_checkpoint(model, optimizer, hemisphere, roi, config):
+    epoch = 0
+    if config['is_load_checkpoint'] == 1:
+        path = os.path.join(config['checkpoint_path'], 'model_'+hemisphere+'_'+roi+'.pt')
+        checkpoint = torch.load(path)
+        
+        epoch = checkpoint['epoch']
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    
+    return epoch, model, optimizer
 
 def main(cfg: config):
     # check if cuda is available and set the device accordingly
     device = torch.device(cfg["device"] if torch.cuda.is_available() else "cpu")
 
-    for subj in range(1, 2):
+    for subj in range(3, 4):
         print(f"subj {subj}/{8}")
         print("-" * 40)
 
         subj = "subj" + format(subj, "02")
 
         # create a data loader object with the config file
-        train_data_loader, val_data_loader = create_data_loader_4_cnn(cfg, subj)
-        test_data_loader = create_test_data_loader_4_cnn(cfg, subj)
+        train_data_loader, val_data_loader = create_data_loader_4_vgg(cfg, subj)
+        test_data_loader = create_test_data_loader_4_vgg(cfg, subj)
         _, lh_fmri, rh_fmri = train_data_loader.dataset.__getitem__(0)
         lh_fmri_len = len(lh_fmri)
         rh_fmri_len = len(rh_fmri)
@@ -153,13 +192,12 @@ def main(cfg: config):
                     rh_model = get_model(len(rh_roi_idx))
 
                     # 训练和预测
-                    test_pred_dict[hemisphere_list[0]][roi_class][roi] = train_and_predict(train_data_loader, test_data_loader, 
-                                                                                           lh_model, lh_roi_idx, hemisphere_list[0], 
+                    test_pred_dict[hemisphere_list[0]][roi_class][roi] = train_and_predict(train_data_loader, val_data_loader, test_data_loader, 
+                                                                                           lh_model, lh_roi_idx, roi, hemisphere_list[0], 
                                                                                            device, cfg)
-                    test_pred_dict[hemisphere_list[1]][roi_class][roi] = train_and_predict(train_data_loader, test_data_loader, 
-                                                                                           rh_model, rh_roi_idx, hemisphere_list[1], 
+                    test_pred_dict[hemisphere_list[1]][roi_class][roi] = train_and_predict(train_data_loader, val_data_loader, test_data_loader, 
+                                                                                           rh_model, rh_roi_idx, roi, hemisphere_list[1], 
                                                                                            device, cfg)
-        
         # 汇总结果
         lh_pred_fmri = matrix_add(test_dataset_len, lh_fmri_len, test_pred_dict[hemisphere_list[0]], roi_idx_dict[hemisphere_list[0]], device)
         rh_pred_fmri = matrix_add(test_dataset_len, rh_fmri_len, test_pred_dict[hemisphere_list[1]], roi_idx_dict[hemisphere_list[1]], device)
