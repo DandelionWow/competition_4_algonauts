@@ -1,11 +1,12 @@
 # train.py: define a function to train the model for one epoch
-import torch
+from evaluate import calculate_pearson_metric
 
 def train(model, data_loader, criterion, optimizer, device, epoch, hemisphere, roi_idx):
     # set the model to training mode
     model.train()
     # initialize the running loss
     running_loss = 0.0
+    running_corr = 0.0
     # loop over the data batches
     for i, (inputs, lh_fmri, rh_fmri) in enumerate(data_loader):
         # move the inputs and labels to the device
@@ -29,12 +30,17 @@ def train(model, data_loader, criterion, optimizer, device, epoch, hemisphere, r
         optimizer.step()
         # update the running loss
         running_loss += loss.item()
+        fmri = labels.cpu().numpy()
+        pred_fmri = outputs.cpu().detach().numpy()
+        img2fmri_corr = calculate_pearson_metric(fmri, pred_fmri)
+        running_corr += img2fmri_corr
         # print statistics every 10 batches
         if (i + 1) % 10 == 0:
-            print('[%d, %5d] loss: %.3f' %
-                  (epoch + 1, i + 1, running_loss / 10))
+            print('[%d, %5d] loss: %.3f corr: %.3f' %
+                  (epoch + 1, i + 1, running_loss / 10, running_corr / 10))
             # reset the running loss
             running_loss = 0.0
+            running_corr = 0.0
 
         
 
