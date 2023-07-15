@@ -1,20 +1,34 @@
-# config.yaml: define the parameters for the pipeline
+# 配置文件
+
+# 图片特征维度
 img_feature_dim: 512
 batch_size: 32
-epochs: 5
+epochs: 1
 device: cuda:1
 learning_rate: 0.0001
 
+# 数据集路径
 dataset_path: /data/SunYang/datasets/Algonauts_dataset/algonauts_2023_main/algonauts_2023_challenge_data
+# 预处理提取图像特征路径
 pkl_path: /data/SunYang/datasets/Algonauts_dataset/pkl_clip
+# 训练集图片文件夹
 train_imgs_dir: training_split/training_images
+# 训练集图片特征文件
 train_imgs_feature_file: train_imgs_feature.npy
+# 真值，左脑
 lh_fmri_dir: training_split/training_fmri/lh_training_fmri.npy
+# 真值，右脑
 rh_fmri_dir: training_split/training_fmri/rh_training_fmri.npy
+# 测试集图片文件夹
 test_imgs_dir: test_split/test_images
+# 测试集图片特征文件
 test_imgs_feature_dir: test_imgs_feature.npy
+# 提交文件夹
 parent_submission_dir: /data/SunYang/datasets/Algonauts_dataset/algonauts_2023_main/algonauts_2023_challenge_submission
 
+# 是否保存检查点
 is_save_checkpoint: 1
+# 是否加载检查点
 is_load_checkpoint: 1
+# 检查点路径
 checkpoint_path: /data/SunYang/models/competition/competition_4_algonauts/dev/checkpoint

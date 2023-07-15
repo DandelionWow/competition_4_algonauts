@@ -77,7 +77,7 @@ def get_roi_idx_dict(data_dir, subj, hemisphere_list, roi_class_roi_map, device)
     
     return roi_idx_dict
 
-def train_and_predict(train_data_loader, val_data_loader, test_data_loader, model, roi_idx, roi, hemisphere, device, config):
+def train_and_predict(train_data_loader, val_data_loader, test_data_loader, model, roi_idx, roi, hemisphere, subj, device, config):
     # move the model to the device
     model.to(device)
 
@@ -85,7 +85,7 @@ def train_and_predict(train_data_loader, val_data_loader, test_data_loader, mode
     criterion, optimizer, scheduler = create_criterion_and_optimizer(model, config)
 
     # 加载checkpoint
-    epoch_, model, optimizer = load_checkpoint(model, optimizer, hemisphere, roi, config)
+    epoch_, model, optimizer = load_checkpoint(model, optimizer, subj, hemisphere, roi, config)
     # loop over epochs
     for epoch in range(epoch_, config["epochs"]): 
         print(f"Epoch {epoch+1}/{config['epochs']}")
@@ -95,7 +95,7 @@ def train_and_predict(train_data_loader, val_data_loader, test_data_loader, mode
         # 在每个epoch结束后，调用scheduler.step()来更新学习率
         # scheduler.step()
         # 保存checkpoint
-        save_checkpoint(epoch+1, model, optimizer, hemisphere, roi, config)
+        save_checkpoint(epoch+1, model, optimizer, subj, hemisphere, roi, config)
 
     with torch.no_grad():
         # valid
@@ -103,11 +103,13 @@ def train_and_predict(train_data_loader, val_data_loader, test_data_loader, mode
         # 获取测试集结果（roi）
         return test(model, test_data_loader, device)
 
-def matrix_add(test_dataset_len, fmri_len, pred_dict: dict, roi_idx_dict: dict, device):
+def summary_test_pred(subject_submission_dir, test_pred_dict: dict, roi_idx_dict: dict, hemisphere, device):
+    pred_dict = test_pred_dict[hemisphere]
     if pred_dict is None or len(pred_dict) == 0:
         return None
     
-    ret = torch.zeros((test_dataset_len, fmri_len)).to(device)
+    ret = np.load(os.path.join(subject_submission_dir, hemisphere+'_pred_test.npy'))
+    ret = torch.tensor(ret).to(device)
 
     for roi_class, roi_dict in pred_dict.items():
         for roi, value in roi_dict.items():
@@ -115,40 +117,47 @@ def matrix_add(test_dataset_len, fmri_len, pred_dict: dict, roi_idx_dict: dict, 
             if value is None:
                 continue
             # 这里应该考虑index重复的情况把？
-            ret[:, roi_idx_dict[roi_class][roi]] = value
+            ret[:, roi_idx_dict[hemisphere][roi_class][roi]] = value
             
     return ret
 
-def save_test_pred(parent_submission_dir, subj, lh_pred_fmri, rh_pred_fmri):
+def save_test_pred(subject_submission_dir, lh_pred_fmri, rh_pred_fmri):
+    # 转换
     if torch.is_tensor(lh_pred_fmri):
         lh_pred_fmri = lh_pred_fmri.cpu().numpy()
     if torch.is_tensor(rh_pred_fmri):
         rh_pred_fmri = rh_pred_fmri.cpu().numpy()
     lh_pred_fmri = lh_pred_fmri.astype(np.float32)
     rh_pred_fmri = rh_pred_fmri.astype(np.float32)
-    subject_submission_dir = os.path.join(parent_submission_dir, subj+'_')
+    # 保存
     if os.path.exists(subject_submission_dir) is False:
         os.mkdir(subject_submission_dir)
     np.save(os.path.join(subject_submission_dir, "lh_pred_test.npy"), lh_pred_fmri)
     np.save(os.path.join(subject_submission_dir, "rh_pred_test.npy"), rh_pred_fmri)
 
-def save_checkpoint(epoch, model, optimizer, hemisphere, roi, config):
+def save_checkpoint(epoch, model, optimizer, subj, hemisphere, roi, config):
     if config['is_save_checkpoint'] == 1:
+        path = os.path.join(config['checkpoint_path'], subj)
+        if os.path.exists(path) is False:
+            os.mkdir(path)
+        path = os.path.join(path, 'model_'+hemisphere+'_'+roi+'.pt')
+        
         torch.save(
             {
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
             },
-            os.path.join(config['checkpoint_path'], 'model_'+hemisphere+'_'+roi+'.pt')
+            path
         )
 
-def load_checkpoint(model, optimizer, hemisphere, roi, config):
+def load_checkpoint(model, optimizer, subj, hemisphere, roi, config):
     epoch = 0
     if config['is_load_checkpoint'] == 1:
-        path = os.path.join(config['checkpoint_path'], 'model_'+hemisphere+'_'+roi+'.pt')
-        checkpoint = torch.load(path)
+        path = os.path.join(config['checkpoint_path'], subj, 'model_'+hemisphere+'_'+roi+'.pt')
         
+        checkpoint = torch.load(path)
+
         epoch = checkpoint['epoch']
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -159,7 +168,7 @@ def main(cfg: config):
     # check if cuda is available and set the device accordingly
     device = torch.device(cfg["device"] if torch.cuda.is_available() else "cpu")
 
-    for subj in range(5, 9):
+    for subj in range(1, 9):
         print(f"subj {subj}/{8}")
         print("-" * 40)
 
@@ -168,10 +177,6 @@ def main(cfg: config):
         # create a data loader object with the config file
         train_data_loader, val_data_loader = create_data_loader_4_clip(cfg, subj)
         test_data_loader = create_test_data_loader_4_clip(cfg, subj)
-        _, lh_fmri, rh_fmri = train_data_loader.dataset.__getitem__(0)
-        lh_fmri_len = len(lh_fmri)
-        rh_fmri_len = len(rh_fmri)
-        test_dataset_len = len(test_data_loader.dataset)
 
         # 获取test集的预测结果字典 和 每个roi类别的roi映射
         test_pred_dict, roi_class_roi_map = get_test_pred_dict_and_roi_map(cfg['dataset_path'], subj, hemisphere_list, roi_class_list)
@@ -187,18 +192,18 @@ def main(cfg: config):
                 lh_roi_idx = roi_idx_dict[hemisphere_list[0]][roi_class][roi]
                 rh_roi_idx = roi_idx_dict[hemisphere_list[1]][roi_class][roi]
                 # 做线性回归的roi
-                if roi in roi_list_4_clip_linear:
-                    # 初始化模型
-                    lh_model = ClipLinearModel(device, len(lh_roi_idx))
-                    rh_model = ClipLinearModel(device, len(rh_roi_idx))
+                # if roi in roi_list_4_clip_linear:
+                #     # 初始化模型
+                #     lh_model = ClipLinearModel(device, len(lh_roi_idx))
+                #     rh_model = ClipLinearModel(device, len(rh_roi_idx))
 
-                    # 训练和预测
-                    test_pred_dict[hemisphere_list[0]][roi_class][roi] = train_and_predict(train_data_loader, val_data_loader, test_data_loader, 
-                                                                                           lh_model, lh_roi_idx, roi, hemisphere_list[0], 
-                                                                                           device, cfg)
-                    test_pred_dict[hemisphere_list[1]][roi_class][roi] = train_and_predict(train_data_loader, val_data_loader, test_data_loader, 
-                                                                                           rh_model, rh_roi_idx, roi, hemisphere_list[1], 
-                                                                                           device, cfg)
+                #     # 训练和预测
+                #     test_pred_dict[hemisphere_list[0]][roi_class][roi] = train_and_predict(train_data_loader, val_data_loader, test_data_loader, 
+                #                                                                            lh_model, lh_roi_idx, roi, hemisphere_list[0], 
+                #                                                                            subj, device, cfg)
+                #     test_pred_dict[hemisphere_list[1]][roi_class][roi] = train_and_predict(train_data_loader, val_data_loader, test_data_loader, 
+                #                                                                            rh_model, rh_roi_idx, roi, hemisphere_list[1], 
+                #                                                                            subj, device, cfg)
                     
                 if roi in roi_list_4_vgg16_linear:
                     # 初始化模型
@@ -208,20 +213,22 @@ def main(cfg: config):
                     # 训练和预测
                     test_pred_dict[hemisphere_list[0]][roi_class][roi] = train_and_predict(train_data_loader, val_data_loader, test_data_loader, 
                                                                                            lh_model, lh_roi_idx, roi, hemisphere_list[0], 
-                                                                                           device, cfg)
+                                                                                           subj, device, cfg)
                     test_pred_dict[hemisphere_list[1]][roi_class][roi] = train_and_predict(train_data_loader, val_data_loader, test_data_loader, 
                                                                                            rh_model, rh_roi_idx, roi, hemisphere_list[1], 
-                                                                                           device, cfg)
-        # 汇总结果
-        lh_pred_fmri = matrix_add(test_dataset_len, lh_fmri_len, test_pred_dict[hemisphere_list[0]], roi_idx_dict[hemisphere_list[0]], device)
-        rh_pred_fmri = matrix_add(test_dataset_len, rh_fmri_len, test_pred_dict[hemisphere_list[1]], roi_idx_dict[hemisphere_list[1]], device)
-        # 保存
-        save_test_pred(cfg['parent_submission_dir'], subj, lh_pred_fmri, rh_pred_fmri)
+                                                                                           subj, device, cfg)
+                
+                # 每个roi汇总保存一次，先读后写
+                subject_submission_dir = os.path.join(cfg['parent_submission_dir'], subj)
+                lh_pred_fmri = summary_test_pred(subject_submission_dir, test_pred_dict, roi_idx_dict, hemisphere_list[0], device)
+                rh_pred_fmri = summary_test_pred(subject_submission_dir, test_pred_dict, roi_idx_dict, hemisphere_list[1], device)
+                # 保存
+                save_test_pred(subject_submission_dir, lh_pred_fmri, rh_pred_fmri)
 
 
 if __name__ == "__main__":
     # 若工作目录更换，这里需要修改
-    config_file = os.path.join(os.getcwd(), "config", "config.yaml")
+    config_file = os.path.join(os.getcwd(), 'dev', 'config', 'config.yaml')
     cfg = config.load_config(config_file)
 
     # 左右脑符号 'lh', 'rh'
