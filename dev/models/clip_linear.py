@@ -8,7 +8,7 @@ import clip
 class ClipLinearModel(nn.Module):
     def __init__(self, device, out_feature_dim):
         super(ClipLinearModel, self).__init__()
-        self.clip, _ = clip.load('ViT-B/32', device)
+        self.clip, _ = clip.load('ViT-B/32', device, download_root='/data/SunYang/.cache/clip')
         self.fc = nn.Linear(self.clip.visual.output_dim, out_feature_dim)
 
     def forward(self, x):

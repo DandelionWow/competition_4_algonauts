@@ -15,9 +15,10 @@ from dataloader import (
     create_data_loader_4_clip,
     create_test_data_loader_4_clip,
 )
-from models.vgg16_linear import get_model
-# from models.alexnet_linear import get_model
-# from models.resnet_linear import get_model
+from models import vgg16_linear
+from models import alexnet_linear
+from models import resnet_linear
+from models.vgg16_mlp import Vgg16MLPModel
 from models.clip_linear import ClipLinearModel
 from models.cnn_linear import CNNModel
 from models.linear_reg import LinearRegression, LinearRegression3Layer
@@ -168,15 +169,15 @@ def main(cfg: config):
     # check if cuda is available and set the device accordingly
     device = torch.device(cfg["device"] if torch.cuda.is_available() else "cpu")
 
-    for subj in range(1, 9):
+    for subj in range(1, 5):
         print(f"subj {subj}/{8}")
         print("-" * 40)
 
         subj = "subj" + format(subj, "02")
 
-        # create a data loader object with the config file
-        train_data_loader, val_data_loader = create_data_loader_4_clip(cfg, subj)
-        test_data_loader = create_test_data_loader_4_clip(cfg, subj)
+        # 创建dataloader，这里应该区分开不同模型（暂不区分）
+        train_data_loader, val_data_loader = create_data_loader_4_cnn(cfg, subj)
+        test_data_loader = create_test_data_loader_4_cnn(cfg, subj)
 
         # 获取test集的预测结果字典 和 每个roi类别的roi映射
         test_pred_dict, roi_class_roi_map = get_test_pred_dict_and_roi_map(cfg['dataset_path'], subj, hemisphere_list, roi_class_list)
@@ -192,23 +193,23 @@ def main(cfg: config):
                 lh_roi_idx = roi_idx_dict[hemisphere_list[0]][roi_class][roi]
                 rh_roi_idx = roi_idx_dict[hemisphere_list[1]][roi_class][roi]
                 # 做线性回归的roi
-                # if roi in roi_list_4_clip_linear:
-                #     # 初始化模型
-                #     lh_model = ClipLinearModel(device, len(lh_roi_idx))
-                #     rh_model = ClipLinearModel(device, len(rh_roi_idx))
+                if roi in roi_list_4_clip_linear:
+                    # 初始化模型
+                    lh_model = ClipLinearModel(device, len(lh_roi_idx))
+                    rh_model = ClipLinearModel(device, len(rh_roi_idx))
 
-                #     # 训练和预测
-                #     test_pred_dict[hemisphere_list[0]][roi_class][roi] = train_and_predict(train_data_loader, val_data_loader, test_data_loader, 
-                #                                                                            lh_model, lh_roi_idx, roi, hemisphere_list[0], 
-                #                                                                            subj, device, cfg)
-                #     test_pred_dict[hemisphere_list[1]][roi_class][roi] = train_and_predict(train_data_loader, val_data_loader, test_data_loader, 
-                #                                                                            rh_model, rh_roi_idx, roi, hemisphere_list[1], 
-                #                                                                            subj, device, cfg)
+                    # 训练和预测
+                    test_pred_dict[hemisphere_list[0]][roi_class][roi] = train_and_predict(train_data_loader, val_data_loader, test_data_loader, 
+                                                                                           lh_model, lh_roi_idx, roi, hemisphere_list[0], 
+                                                                                           subj, device, cfg)
+                    test_pred_dict[hemisphere_list[1]][roi_class][roi] = train_and_predict(train_data_loader, val_data_loader, test_data_loader, 
+                                                                                           rh_model, rh_roi_idx, roi, hemisphere_list[1], 
+                                                                                           subj, device, cfg)
                     
                 if roi in roi_list_4_vgg16_linear:
                     # 初始化模型
-                    lh_model = get_model(len(lh_roi_idx))
-                    rh_model = get_model(len(rh_roi_idx))
+                    lh_model = vgg16_linear.get_model(len(lh_roi_idx))
+                    rh_model = vgg16_linear.get_model(len(rh_roi_idx))
 
                     # 训练和预测
                     test_pred_dict[hemisphere_list[0]][roi_class][roi] = train_and_predict(train_data_loader, val_data_loader, test_data_loader, 
@@ -218,6 +219,32 @@ def main(cfg: config):
                                                                                            rh_model, rh_roi_idx, roi, hemisphere_list[1], 
                                                                                            subj, device, cfg)
                 
+                if roi in roi_list_4_alexnet_linear:
+                    # 初始化模型
+                    lh_model = alexnet_linear.get_model(len(lh_roi_idx))
+                    rh_model = alexnet_linear.get_model(len(rh_roi_idx))
+
+                    # 训练和预测
+                    test_pred_dict[hemisphere_list[0]][roi_class][roi] = train_and_predict(train_data_loader, val_data_loader, test_data_loader, 
+                                                                                           lh_model, lh_roi_idx, roi, hemisphere_list[0], 
+                                                                                           subj, device, cfg)
+                    test_pred_dict[hemisphere_list[1]][roi_class][roi] = train_and_predict(train_data_loader, val_data_loader, test_data_loader, 
+                                                                                           rh_model, rh_roi_idx, roi, hemisphere_list[1], 
+                                                                                           subj, device, cfg)
+                
+                if roi in roi_list_4_vgg16_mlp:
+                    # 初始化模型
+                    lh_model = Vgg16MLPModel(len(lh_roi_idx))
+                    rh_model = Vgg16MLPModel(len(rh_roi_idx))
+
+                    # 训练和预测
+                    test_pred_dict[hemisphere_list[0]][roi_class][roi] = train_and_predict(train_data_loader, val_data_loader, test_data_loader, 
+                                                                                           lh_model, lh_roi_idx, roi, hemisphere_list[0], 
+                                                                                           subj, device, cfg)
+                    test_pred_dict[hemisphere_list[1]][roi_class][roi] = train_and_predict(train_data_loader, val_data_loader, test_data_loader, 
+                                                                                           rh_model, rh_roi_idx, roi, hemisphere_list[1], 
+                                                                                           subj, device, cfg)    
+                    
                 # 每个roi汇总保存一次，先读后写
                 subject_submission_dir = os.path.join(cfg['parent_submission_dir'], subj)
                 lh_pred_fmri = summary_test_pred(subject_submission_dir, test_pred_dict, roi_idx_dict, hemisphere_list[0], device)
@@ -228,7 +255,7 @@ def main(cfg: config):
 
 if __name__ == "__main__":
     # 若工作目录更换，这里需要修改
-    config_file = os.path.join(os.getcwd(), 'dev', 'config', 'config.yaml')
+    config_file = os.path.join(os.getcwd(), "config", "config.yaml")
     cfg = config.load_config(config_file)
 
     # 左右脑符号 'lh', 'rh'
@@ -244,22 +271,37 @@ if __name__ == "__main__":
     ]
     # 不同roi建模可在此声明roi列表，在for中使用if roi in roi_list判断
     roi_list_4_clip_linear = [
-        # 'V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d', 'hV4',
-        'EBA', 'FBA-1', 'FBA-2', 'mTL-bodies',
-        'OFA', 'FFA-1', 'FFA-2', 'mTL-faces', 'aTL-faces',
-        'OPA', 'PPA', 'RSC',
-        'OWFA', 'VWFA-1', 'VWFA-2', 'mfs-words', 'mTL-words',
-        # 'early', 
-        'midventral', 'midlateral', 'midparietal', 'ventral', 'lateral', 'parietal'
+        # 'V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d', 
+        # 'hV4', 'EBA', 'FBA-1', 'FBA-2', 'mTL-bodies',
+        # 'OFA', 'FFA-1', 'FFA-2', 'mTL-faces', 'aTL-faces',
+        # 'OPA', 'PPA', 'RSC',
+        # 'OWFA', 'VWFA-1', 'VWFA-2', 'mfs-words', 'mTL-words',
+        # 'early', 'midventral', 'midlateral', 'midparietal', 'ventral', 'lateral', 'parietal'
     ]
     roi_list_4_vgg16_linear = [
-        'V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d', 'hV4',
+        # 'V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d', 'hV4',
+        # 'EBA', 'FBA-1', 'FBA-2', 'mTL-bodies',
+        # 'OFA', 'FFA-1', 'FFA-2', 'mTL-faces', 'aTL-faces',
+        # 'OPA', 'PPA', 'RSC', 'OWFA', 
+        # 'VWFA-1', 'VWFA-2', 'mfs-words', 'mTL-words',
+        # 'early', 'midventral', 'midlateral', 'midparietal', 'ventral', 'lateral', 'parietal'
+    ]
+    # 试一下alexnet
+    roi_list_4_alexnet_linear = [
+        # 'V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d', 'hV4',
         # 'EBA', 'FBA-1', 'FBA-2', 'mTL-bodies',
         # 'OFA', 'FFA-1', 'FFA-2', 'mTL-faces', 'aTL-faces',
         # 'OPA', 'PPA', 'RSC',
         # 'OWFA', 'VWFA-1', 'VWFA-2', 'mfs-words', 'mTL-words',
-        'early', 
-        # 'midventral', 'midlateral', 'midparietal', 'ventral', 'lateral', 'parietal'
+        # 'early', 'midventral', 'midlateral', 'midparietal', 'ventral', 'lateral', 'parietal'
+    ]
+    roi_list_4_vgg16_mlp = [
+        'V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d', 'hV4',
+        # 'EBA', 'FBA-1', 'FBA-2', 'mTL-bodies',
+        # 'OFA', 'FFA-1', 'FFA-2', 'mTL-faces', 'aTL-faces',
+        # 'OPA', 'PPA', 'RSC', 'OWFA', 
+        # 'VWFA-1', 'VWFA-2', 'mfs-words', 'mTL-words',
+        # 'early', 'midventral', 'midlateral', 'midparietal', 'ventral', 'lateral', 'parietal'
     ]
 
     main(cfg)

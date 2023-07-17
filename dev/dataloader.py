@@ -62,10 +62,9 @@ def create_test_data_loader(config, subj):
 def create_data_loader_4_cnn(config, subj):
     # create a transform function to resize and normalize the images
     transform = transforms.Compose([
-        # transforms.Resize(256),
-        transforms.CenterCrop(224),
+        transforms.Resize((224, 224)),
         transforms.ToTensor(),
-        # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        transforms.Normalize(mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])
     ])
 
     imgs_dir = os.path.join(config['dataset_path'], subj, config['train_imgs_dir'])
@@ -95,10 +94,9 @@ def create_data_loader_4_cnn(config, subj):
 def create_test_data_loader_4_cnn(config, subj):
     # create a transform function to resize and normalize the images
     transform = transforms.Compose([
-        # transforms.Resize(256),
-        transforms.CenterCrop(224),
+        transforms.Resize((224, 224)),
         transforms.ToTensor(),
-        # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        transforms.Normalize(mean=[0.48145466, 0.4578275, 0.40821073], std=[0.26862954, 0.26130258, 0.27577711])
     ])
 
     imgs_dir = os.path.join(config['dataset_path'], subj, config['test_imgs_dir'])
