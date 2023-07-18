@@ -11,7 +11,9 @@ class Vgg16MLPModel(nn.Module):
         self.vgg16 = models.vgg16(pretrained=True)
         self.features = self.vgg16.features
         self.avgpool = nn.AdaptiveAvgPool2d((7, 7))
-        self.mlp = nn.Linear(512 * 7 * 7, out_feature_dim)
+        self.mlp = nn.Sequential(
+            nn.Linear(512 * 7 * 7, out_feature_dim), 
+        )
 
     def forward(self, x):
         y = self.features(x)

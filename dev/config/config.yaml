@@ -3,8 +3,8 @@
 # 图片特征维度
 img_feature_dim: 512
 batch_size: 32
-epochs: 1
-device: cuda:1
+epochs: 8
+device: cuda:2
 learning_rate: 0.0001
 
 # 数据集路径
@@ -27,8 +27,11 @@ test_imgs_feature_dir: test_imgs_feature.npy
 parent_submission_dir: /data/SunYang/datasets/Algonauts_dataset/algonauts_2023_main/algonauts_2023_challenge_submission
 
 # 是否保存检查点
-is_save_checkpoint: 1
+is_save_checkpoint: 0
 # 是否加载检查点
-is_load_checkpoint: 1
+is_load_checkpoint: 0
 # 检查点路径
 checkpoint_path: /data/SunYang/models/competition/competition_4_algonauts/dev/checkpoint
+
+# best model checkpoint保存路径
+best_checkpoint_path: /data/SunYang/models/competition/competition_4_algonauts/dev/best_checkpoint
