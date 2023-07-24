@@ -15,9 +15,10 @@ from dataloader import (
     create_data_loader_4_clip,
     create_test_data_loader_4_clip,
 )
-from models.vgg16_linear import get_model
-# from models.alexnet_linear import get_model
-# from models.resnet_linear import get_model
+from models import vgg16_linear
+from models import alexnet_linear
+from models import resnet_linear
+from models.vgg16_mlp import Vgg16MLPModel
 from models.clip_linear import ClipLinearModel
 from models.cnn_linear import CNNModel
 from models.linear_reg import LinearRegression, LinearRegression3Layer
@@ -26,6 +27,12 @@ from train import train
 from test import test
 from valid import valid
 import numpy as np
+
+_STR_TRAIN = 'train'
+_STR_TEST = 'test'
+_STR_VAL = 'val'
+_STR_HEMISPHERE_LEFT = 'lh'
+_STR_HEMISPHERE_RIGHT = 'rh'
 
 def get_test_pred_dict_and_roi_map(data_dir, subj, hemisphere_list, roi_class_list):
     # 用于保存test集的预测结果形式为：{'lh': {'roi_class': {'roi': [...]}}}
@@ -76,32 +83,6 @@ def get_roi_idx_dict(data_dir, subj, hemisphere_list, roi_class_roi_map, device)
                 roi_idx_dict[hemisphere][roi_class][roi] = fmri_roi_idx
     
     return roi_idx_dict
-
-def train_and_predict(train_data_loader, val_data_loader, test_data_loader, model, roi_idx, roi, hemisphere, subj, device, config):
-    # move the model to the device
-    model.to(device)
-
-    # create a criterion and optimizer object with the model and config file
-    criterion, optimizer, scheduler = create_criterion_and_optimizer(model, config)
-
-    # 加载checkpoint
-    epoch_, model, optimizer = load_checkpoint(model, optimizer, subj, hemisphere, roi, config)
-    # loop over epochs
-    for epoch in range(epoch_, config["epochs"]): 
-        print(f"Epoch {epoch+1}/{config['epochs']}")
-        print("-" * 10)
-        # train for one epoch
-        train(model, train_data_loader, criterion, optimizer, device, epoch, hemisphere, roi_idx)
-        # 在每个epoch结束后，调用scheduler.step()来更新学习率
-        # scheduler.step()
-        # 保存checkpoint
-        save_checkpoint(epoch+1, model, optimizer, subj, hemisphere, roi, config)
-
-    with torch.no_grad():
-        # valid
-        valid(model, val_data_loader, criterion, device, hemisphere, roi_idx)
-        # 获取测试集结果（roi）
-        return test(model, test_data_loader, device)
 
 def summary_test_pred(subject_submission_dir, test_pred_dict: dict, roi_idx_dict: dict, hemisphere, device):
     pred_dict = test_pred_dict[hemisphere]
@@ -164,25 +145,92 @@ def load_checkpoint(model, optimizer, subj, hemisphere, roi, config):
     
     return epoch, model, optimizer
 
+def train_model(model, data_loader_dict, roi_idx, roi, hemisphere, subj, device, cfg):
+    model.to(device)
+    
+    # 实例化损失，优化器，学习率更新
+    criterion, optimizer, scheduler = create_criterion_and_optimizer(model, cfg)
+
+    # 加载checkpoint
+    epoch_, model, optimizer = load_checkpoint(model, optimizer, subj, hemisphere, roi, cfg)
+
+    # 初始化最佳matric
+    best_pearson_metric = .0
+    
+    # loop over epochs
+    for epoch in range(epoch_, cfg["epochs"]): 
+        print(f"Epoch {epoch+1}/{cfg['epochs']}")
+        print("-" * 10)
+        # 训练
+        train(model, data_loader_dict[_STR_TRAIN], criterion, optimizer, device, epoch, hemisphere, roi_idx)
+        # 在每个epoch结束后，调用scheduler.step()来更新学习率
+        # scheduler.step()
+        
+        # 保存checkpoint
+        save_checkpoint(epoch+1, model, optimizer, subj, hemisphere, roi, cfg)
+
+        with torch.no_grad():
+            # 验证
+            val_corr = valid(model, data_loader_dict[_STR_VAL], criterion, device, hemisphere, roi_idx)
+            
+            # 保存最佳模型参数
+            if val_corr > best_pearson_metric:
+                best_pearson_metric = val_corr
+                print(f'Saving model with highest metric: {best_pearson_metric:.4f}')
+                path = os.path.join(cfg['best_checkpoint_path'], subj)
+                if os.path.exists(path) is False:
+                    os.mkdir(path)
+                path = os.path.join(path, hemisphere+'_'+roi+'.pt')
+                torch.save(model.state_dict(), path)
+
+def test_model(model, data_loader_dict, roi, hemisphere, subj, cfg, device):
+    # 加载最佳模型参数
+    path = os.path.join(cfg['best_checkpoint_path'], subj, hemisphere+'_'+roi+'.pt')
+    model.load_state_dict(torch.load(path))
+    
+    with torch.no_grad():
+        # 获取测试集结果
+        return test(model, data_loader_dict[_STR_TEST], device)
+
+def train_and_test(model_dict: dict, data_loader_dict: dict, roi_idx_dict: dict, subj, roi_class, roi, target_roi_list, test_pred_dict, device, cfg):
+    if roi in target_roi_list:
+        for hemisphere, model in model_dict.items():
+            # 训练模型
+            train_model(model, data_loader_dict, roi_idx_dict[hemisphere][roi_class][roi], roi, hemisphere, subj, device, cfg)
+            # test集预测
+            test_pred_dict[hemisphere][roi_class][roi] = \
+                test_model(model, data_loader_dict, roi, hemisphere, subj, cfg, device)
+    
+    return test_pred_dict
+
 def main(cfg: config):
-    # check if cuda is available and set the device accordingly
+    # set the device
     device = torch.device(cfg["device"] if torch.cuda.is_available() else "cpu")
 
-    for subj in range(1, 9):
-        print(f"subj {subj}/{8}")
+    for subj in range(5, 9):
+        subj = "subj" + format(subj, "02")
+        print(f"{subj}/08")
         print("-" * 40)
 
-        subj = "subj" + format(subj, "02")
-
-        # create a data loader object with the config file
-        train_data_loader, val_data_loader = create_data_loader_4_clip(cfg, subj)
-        test_data_loader = create_test_data_loader_4_clip(cfg, subj)
+        # 创建dataloader，这里应该区分开不同模型（暂不区分）
+        train_data_loader, val_data_loader = create_data_loader_4_cnn(cfg, subj)
+        test_data_loader = create_test_data_loader_4_cnn(cfg, subj)
+        data_loader_dict = {
+            _STR_TRAIN: train_data_loader,
+            _STR_TEST: test_data_loader,
+            _STR_VAL: val_data_loader,
+        }
 
         # 获取test集的预测结果字典 和 每个roi类别的roi映射
         test_pred_dict, roi_class_roi_map = get_test_pred_dict_and_roi_map(cfg['dataset_path'], subj, hemisphere_list, roi_class_list)
         # 获取每个roi对应fmri数据中的索引
         roi_idx_dict = get_roi_idx_dict(cfg['dataset_path'], subj, hemisphere_list, roi_class_roi_map, device)
                  
+        model_dict = {
+            _STR_HEMISPHERE_LEFT: None,
+            _STR_HEMISPHERE_RIGHT: None,
+        }
+        
         # 遍历
         for roi_class, roi_dict in test_pred_dict[hemisphere_list[0]].items():
             for roi in roi_dict.keys():
@@ -191,33 +239,32 @@ def main(cfg: config):
                 # 加载roi对应fmri中的索引
                 lh_roi_idx = roi_idx_dict[hemisphere_list[0]][roi_class][roi]
                 rh_roi_idx = roi_idx_dict[hemisphere_list[1]][roi_class][roi]
-                # 做线性回归的roi
-                # if roi in roi_list_4_clip_linear:
-                #     # 初始化模型
-                #     lh_model = ClipLinearModel(device, len(lh_roi_idx))
-                #     rh_model = ClipLinearModel(device, len(rh_roi_idx))
-
-                #     # 训练和预测
-                #     test_pred_dict[hemisphere_list[0]][roi_class][roi] = train_and_predict(train_data_loader, val_data_loader, test_data_loader, 
-                #                                                                            lh_model, lh_roi_idx, roi, hemisphere_list[0], 
-                #                                                                            subj, device, cfg)
-                #     test_pred_dict[hemisphere_list[1]][roi_class][roi] = train_and_predict(train_data_loader, val_data_loader, test_data_loader, 
-                #                                                                            rh_model, rh_roi_idx, roi, hemisphere_list[1], 
-                #                                                                            subj, device, cfg)
                     
-                if roi in roi_list_4_vgg16_linear:
-                    # 初始化模型
-                    lh_model = get_model(len(lh_roi_idx))
-                    rh_model = get_model(len(rh_roi_idx))
-
-                    # 训练和预测
-                    test_pred_dict[hemisphere_list[0]][roi_class][roi] = train_and_predict(train_data_loader, val_data_loader, test_data_loader, 
-                                                                                           lh_model, lh_roi_idx, roi, hemisphere_list[0], 
-                                                                                           subj, device, cfg)
-                    test_pred_dict[hemisphere_list[1]][roi_class][roi] = train_and_predict(train_data_loader, val_data_loader, test_data_loader, 
-                                                                                           rh_model, rh_roi_idx, roi, hemisphere_list[1], 
-                                                                                           subj, device, cfg)
-                
+                # ClipLinearModel, roi_list_4_clip_linear
+                model_dict[_STR_HEMISPHERE_LEFT] = ClipLinearModel(device, len(lh_roi_idx))
+                model_dict[_STR_HEMISPHERE_RIGHT] = ClipLinearModel(device, len(rh_roi_idx))
+                test_pred_dict = train_and_test(model_dict, data_loader_dict, roi_idx_dict, 
+                               subj, roi_class, roi, roi_list_4_clip_linear, 
+                               test_pred_dict, device, cfg)
+                # vgg16_linear, roi_list_4_vgg16_linear
+                model_dict[_STR_HEMISPHERE_LEFT] = vgg16_linear.get_model(len(lh_roi_idx))
+                model_dict[_STR_HEMISPHERE_RIGHT] = vgg16_linear.get_model(len(rh_roi_idx))
+                test_pred_dict = train_and_test(model_dict, data_loader_dict, roi_idx_dict, 
+                               subj, roi_class, roi, roi_list_4_vgg16_linear, 
+                               test_pred_dict, device, cfg)
+                # alexnet_linear, roi_list_4_alexnet_linear
+                model_dict[_STR_HEMISPHERE_LEFT] = alexnet_linear.get_model(len(lh_roi_idx))
+                model_dict[_STR_HEMISPHERE_RIGHT] = alexnet_linear.get_model(len(rh_roi_idx))
+                test_pred_dict = train_and_test(model_dict, data_loader_dict, roi_idx_dict, 
+                               subj, roi_class, roi, roi_list_4_alexnet_linear, 
+                               test_pred_dict, device, cfg)
+                # Vgg16MLPModel, roi_list_4_vgg16_mlp
+                model_dict[_STR_HEMISPHERE_LEFT] = Vgg16MLPModel(len(lh_roi_idx))
+                model_dict[_STR_HEMISPHERE_RIGHT] = Vgg16MLPModel(len(rh_roi_idx))
+                test_pred_dict = train_and_test(model_dict, data_loader_dict, roi_idx_dict, 
+                               subj, roi_class, roi, roi_list_4_vgg16_mlp, 
+                               test_pred_dict, device, cfg)
+                    
                 # 每个roi汇总保存一次，先读后写
                 subject_submission_dir = os.path.join(cfg['parent_submission_dir'], subj)
                 lh_pred_fmri = summary_test_pred(subject_submission_dir, test_pred_dict, roi_idx_dict, hemisphere_list[0], device)
@@ -228,7 +275,7 @@ def main(cfg: config):
 
 if __name__ == "__main__":
     # 若工作目录更换，这里需要修改
-    config_file = os.path.join(os.getcwd(), 'dev', 'config', 'config.yaml')
+    config_file = os.path.join(os.getcwd(), "config", "config.yaml")
     cfg = config.load_config(config_file)
 
     # 左右脑符号 'lh', 'rh'
@@ -244,22 +291,37 @@ if __name__ == "__main__":
     ]
     # 不同roi建模可在此声明roi列表，在for中使用if roi in roi_list判断
     roi_list_4_clip_linear = [
-        # 'V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d', 'hV4',
-        'EBA', 'FBA-1', 'FBA-2', 'mTL-bodies',
-        'OFA', 'FFA-1', 'FFA-2', 'mTL-faces', 'aTL-faces',
-        'OPA', 'PPA', 'RSC',
-        'OWFA', 'VWFA-1', 'VWFA-2', 'mfs-words', 'mTL-words',
-        # 'early', 
-        'midventral', 'midlateral', 'midparietal', 'ventral', 'lateral', 'parietal'
+        # 'V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d', 
+        # 'hV4', 'EBA', 'FBA-1', 'FBA-2', 'mTL-bodies',
+        # 'OFA', 'FFA-1', 'FFA-2', 'mTL-faces', 'aTL-faces',
+        # 'OPA', 'PPA', 'RSC',
+        # 'OWFA', 'VWFA-1', 'VWFA-2', 'mfs-words', 'mTL-words',
+        # 'early', 'midventral', 'midlateral', 'midparietal', 'ventral', 'lateral', 'parietal'
     ]
     roi_list_4_vgg16_linear = [
-        'V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d', 'hV4',
+        # 'V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d', 'hV4',
+        # 'EBA', 'FBA-1', 'FBA-2', 'mTL-bodies',
+        # 'OFA', 'FFA-1', 'FFA-2', 'mTL-faces', 'aTL-faces',
+        # 'OPA', 'PPA', 'RSC', 'OWFA', 
+        # 'VWFA-1', 'VWFA-2', 'mfs-words', 'mTL-words',
+        # 'early', 'midventral', 'midlateral', 'midparietal', 'ventral', 'lateral', 'parietal'
+    ]
+    # 试一下alexnet
+    roi_list_4_alexnet_linear = [
+        # 'V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d', 'hV4',
         # 'EBA', 'FBA-1', 'FBA-2', 'mTL-bodies',
         # 'OFA', 'FFA-1', 'FFA-2', 'mTL-faces', 'aTL-faces',
         # 'OPA', 'PPA', 'RSC',
         # 'OWFA', 'VWFA-1', 'VWFA-2', 'mfs-words', 'mTL-words',
-        'early', 
-        # 'midventral', 'midlateral', 'midparietal', 'ventral', 'lateral', 'parietal'
+        # 'early', 'midventral', 'midlateral', 'midparietal', 'ventral', 'lateral', 'parietal'
+    ]
+    roi_list_4_vgg16_mlp = [
+        'V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d', 'hV4',
+        # 'EBA', 'FBA-1', 'FBA-2', 'mTL-bodies',
+        # 'OFA', 'FFA-1', 'FFA-2', 'mTL-faces', 'aTL-faces',
+        # 'OPA', 'PPA', 'RSC', 'OWFA', 
+        # 'VWFA-1', 'VWFA-2', 'mfs-words', 'mTL-words',
+        # 'early', 'midventral', 'midlateral', 'midparietal', 'ventral', 'lateral', 'parietal'
     ]
 
     main(cfg)
