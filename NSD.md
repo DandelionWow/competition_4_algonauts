@@ -144,7 +144,47 @@ fMRI是功能性磁共振成像的缩写，是一种无创非放射性观察大�
 这些文件对应于betas_sessionBB.nii.gz，它们表示了每个扫描会话中哪些体素包含了**有效的数据**。
 
 ### Noise ceiling
+根据每个体素（或顶点）对同一张图片重复呈现时的beta weights之间的**可靠性**，来计算**噪声上限**。本质上，如果一个体素对同一张图片重复呈现时的响应越稳定，那么这个响应中可以归因于刺激相关信号的方差就越大。这些噪声上限估计可以用来给出一个计算模型能够解释/预测一个给定体素（或顶点）beta weights中方差的上界。噪声上限计算背后的统计理论可以在NSD论文中找到。
 
+##### nsddata_betas/ppdata/subjAA/func*/betas_*/ncsnr.nii.gz
+##### nsddata_betas/ppdata/subjAA/fsaverage/betas_*/[lh,rh].ncsnr.mgh
+##### nsddata_betas/ppdata/subjAA/nativesurface/betas_*/[lh,rh].ncsnr.mgh
+这些文件为每个体素（或顶点）提供了**噪声上限信噪比**（ncsnr）。这些ncsnr值是基于所有NSD扫描会话中得到的所有beta weights来计算的。值通常在0到0.6之间，但也可以更高（一部分体素/顶点会恰好为0，这是由于计算方法的性质所导致的预期结果）。无效的体素（例如在脑外的）被赋予一个NaN值。ncsnr可以很容易地转换成噪声上限（见下文）。"ncsnr_split1"和"ncsnr_split2"文件反映了从每个受试者可用的图像的两个独立分组中计算ncsnr值的结果。
+
+![subj05/func1mm/betas_fithrf_GLMdenoise_RR/ncsnr.nii.gz](https://slite.com/api/files/_Xu5SGj2wV/image.png)
+
+#### 将噪音比转换为噪音上限百分比
+在NSD数据论文中，我们解释了噪声上限（NC）可以表示为：
+
+$$NC=100\times\frac{\sigma_{signal}^2}{\sigma_{signal}^2+\sigma_{noise}^2}$$
+
+其中sigma_signal是信号的标准差，sigma_noise是噪声的标准差。但是，如何根据噪声上限信噪比（ncsnr）的知识来计算这个结果呢？在推导这个结果之前，考虑一下用户可能希望将每张图像进行的多次试验的响应平均在一起。通过平均，用户有效地降低了噪声的方差。由于我们假设噪声是高斯分布的，有效的噪声方差变为：
+
+$$\frac{\sigma_{noise}^2}{n}$$
+
+其中n是平均在一起的试验的数量。我们现在可以将噪声上限重写为：
+
+$$NC=100\times\frac{\sigma_{signal}^2}{\sigma_{signal}^2+\frac{\sigma_{noise}^2}{n}}$$
+
+将分子和分母都除以sigma_noise2，我们得到
+
+$$NC=100\times\frac{\frac{\sigma_{signal}^2}{\sigma_{noise}^2}}{\frac{\sigma_{signal}^2}{\sigma_{noise}^2}+\frac{1}{n}}$$
+
+进一步化简为
+
+$$NC=100\times\frac{ncsnr^2}{ncsnr^2+\frac{1}{n}}$$
+
+这就显示了如何根据一个体素的ncsnr值来计算它的噪声上限。
+
+一个复杂的问题是，有可能在使用的数据中，不同的图像有不同数量的试验被平均在一起。为了灵活地处理任何可能的情况，我们可以用加权平均来合并不同图像的方差估计，并将噪声上限方程重写为：
+
+$$NC=100\times\frac{\sigma_{signal}^2}{\sigma_{signal}^2+\Bigg(\frac{A\Big(\frac{\sigma_{noise}}{\sqrt{3}}\Big)^2+B\Big(\frac{\sigma_{noise}}{\sqrt{2}}\Big)^2+C\Big(\frac{\sigma_{noise}}{\sqrt{1}}\Big)^2}{A+B+C}\Bigg)}$$
+
+其中A是反映3次试验的数据点的数量，B是反映2次试验的数据点的数量，C是反映1次试验的数据点的数量。用一些代数运算，我们可以将噪声上限方程重写为如下形式：
+
+$$NC=100\times\frac{ncsnr^2}{ncsnr^2+\frac{\frac{A}{3}+\frac{B}{2}+\frac{C}{1}}{A+B+C}}$$
+
+注意，这个方程只是之前噪声上限方程的一个更一般的版本。
 
 ## 关键词
 ### 体素
@@ -202,3 +242,6 @@ MNI空间是一种基于蒙特利尔神经学研究所（MNI）模板的群体�
 
 ### 群体空间
 群体空间是指将不同受试者的fMRI数据对齐到一个公共的参考空间，以便于进行群体水平的比较和统计。常用的群体空间有fsaverage和MNI等。
+
+### 噪声上限信噪比 ncsnr
+噪声上限信噪比（noise ceiling signal-to-noise ratio, ncsnr）：指一种用来评估fMRI数据质量的指标，它反映了一个体素（或顶点）中刺激相关信号与噪声的比例。
