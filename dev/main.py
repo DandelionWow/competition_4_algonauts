@@ -97,8 +97,26 @@ def summary_test_pred(subject_submission_dir, test_pred_dict: dict, roi_idx_dict
             # 跳过未预测的roi
             if value is None:
                 continue
-            # 这里应该考虑index重复的情况把？
-            ret[:, roi_idx_dict[hemisphere][roi_class][roi]] = value
+
+            if roi_class == 'streams':
+                # streams用于填充值为0的idx
+                ret_zeros_like = torch.zeros(ret.shape[1])
+                ret_zeros_idx = torch.where(ret[0, :] == 0)[0]
+                ret_zeros_like[ret_zeros_idx] = 1
+                roi_idx = roi_idx_dict[hemisphere][roi_class][roi]
+                ret_zeros_like[roi_idx] += 1
+                ret_fill_idx = torch.where(ret_zeros_like == 2)[0]
+                if len(ret_fill_idx) == 0:
+                    continue
+                # 对应fill_idx，重置value
+                ret_zeros_like = torch.zeros_like(ret)
+                ret_zeros_like[:, roi_idx] = value
+                value = ret_zeros_like[:, ret_fill_idx]
+            else:
+                # 这里应该考虑index重复的情况把？
+                ret_fill_idx = roi_idx_dict[hemisphere][roi_class][roi]
+
+            ret[:, ret_fill_idx] = value
             
     return ret
 
@@ -155,8 +173,8 @@ def train_model(model, data_loader_dict, roi_idx, roi, hemisphere, subj, device,
     epoch_, model, optimizer = load_checkpoint(model, optimizer, subj, hemisphere, roi, cfg)
 
     # 初始化最佳matric
-    best_pearson_metric = .0
-    
+    best_pearson_metric = -1.0
+    best_epoch = 0
     # loop over epochs
     for epoch in range(epoch_, cfg["epochs"]): 
         print(f"Epoch {epoch+1}/{cfg['epochs']}")
@@ -175,6 +193,7 @@ def train_model(model, data_loader_dict, roi_idx, roi, hemisphere, subj, device,
             
             # 保存最佳模型参数
             if val_corr > best_pearson_metric:
+                best_epoch = epoch
                 best_pearson_metric = val_corr
                 print(f'Saving model with highest metric: {best_pearson_metric:.4f}')
                 path = os.path.join(cfg['best_checkpoint_path'], subj)
@@ -182,6 +201,10 @@ def train_model(model, data_loader_dict, roi_idx, roi, hemisphere, subj, device,
                     os.mkdir(path)
                 path = os.path.join(path, hemisphere+'_'+roi+'.pt')
                 torch.save(model.state_dict(), path)
+
+        # 若2个epoch未保存最佳，说明过拟合，终止训练
+        if epoch - best_epoch == int(cfg['overfitting_max_epoch']):
+            break
 
 def test_model(model, data_loader_dict, roi, hemisphere, subj, cfg, device):
     # 加载最佳模型参数
@@ -207,7 +230,7 @@ def main(cfg: config):
     # set the device
     device = torch.device(cfg["device"] if torch.cuda.is_available() else "cpu")
 
-    for subj in range(5, 9):
+    for subj in subj_list:
         subj = "subj" + format(subj, "02")
         print(f"{subj}/08")
         print("-" * 40)
@@ -225,7 +248,7 @@ def main(cfg: config):
         test_pred_dict, roi_class_roi_map = get_test_pred_dict_and_roi_map(cfg['dataset_path'], subj, hemisphere_list, roi_class_list)
         # 获取每个roi对应fmri数据中的索引
         roi_idx_dict = get_roi_idx_dict(cfg['dataset_path'], subj, hemisphere_list, roi_class_roi_map, device)
-                 
+        
         model_dict = {
             _STR_HEMISPHERE_LEFT: None,
             _STR_HEMISPHERE_RIGHT: None,
@@ -234,6 +257,9 @@ def main(cfg: config):
         # 遍历
         for roi_class, roi_dict in test_pred_dict[hemisphere_list[0]].items():
             for roi in roi_dict.keys():
+                if roi not in roi_list_all_model:
+                    continue
+                
                 print(f"roi: {roi}")
                 print("-" * 20)
                 # 加载roi对应fmri中的索引
@@ -291,12 +317,16 @@ if __name__ == "__main__":
     ]
     # 不同roi建模可在此声明roi列表，在for中使用if roi in roi_list判断
     roi_list_4_clip_linear = [
-        # 'V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d', 
-        # 'hV4', 'EBA', 'FBA-1', 'FBA-2', 'mTL-bodies',
-        # 'OFA', 'FFA-1', 'FFA-2', 'mTL-faces', 'aTL-faces',
-        # 'OPA', 'PPA', 'RSC',
-        # 'OWFA', 'VWFA-1', 'VWFA-2', 'mfs-words', 'mTL-words',
-        # 'early', 'midventral', 'midlateral', 'midparietal', 'ventral', 'lateral', 'parietal'
+        # 'V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d', 'hV4', 
+        'EBA', 'FBA-1', 'FBA-2', 'mTL-bodies',
+        # 'OFA', 
+        'FFA-1', 'FFA-2', 'mTL-faces', 'aTL-faces',
+        'OPA', 'PPA', 'RSC',
+        # 'OWFA', 
+        'VWFA-1', 'VWFA-2', 'mfs-words', 
+        # 'mTL-words',
+        # 'early', 'midventral', 'midlateral', 'midparietal', 
+        'ventral', 'lateral', 'parietal'
     ]
     roi_list_4_vgg16_linear = [
         # 'V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d', 'hV4',
@@ -318,10 +348,26 @@ if __name__ == "__main__":
     roi_list_4_vgg16_mlp = [
         'V1v', 'V1d', 'V2v', 'V2d', 'V3v', 'V3d', 'hV4',
         # 'EBA', 'FBA-1', 'FBA-2', 'mTL-bodies',
-        # 'OFA', 'FFA-1', 'FFA-2', 'mTL-faces', 'aTL-faces',
-        # 'OPA', 'PPA', 'RSC', 'OWFA', 
-        # 'VWFA-1', 'VWFA-2', 'mfs-words', 'mTL-words',
-        # 'early', 'midventral', 'midlateral', 'midparietal', 'ventral', 'lateral', 'parietal'
+        'OFA', 
+        # 'FFA-1', 'FFA-2', 'mTL-faces', 'aTL-faces',
+        # 'OPA', 'PPA', 'RSC', 
+        'OWFA', 
+        # 'VWFA-1', 'VWFA-2', 'mfs-words', 
+        'mTL-words',
+        'early', 'midventral', 'midlateral', 'midparietal', 
+        # 'ventral', 'lateral', 'parietal'
+    ]
+    roi_list_all_model = roi_list_4_clip_linear + roi_list_4_vgg16_linear + \
+        roi_list_4_alexnet_linear + roi_list_4_vgg16_mlp
+    subj_list = [
+        # 1,
+        # 2,
+        # 3,
+        # 4,
+        # 5,
+        # 6,
+        7,
+        # 8,
     ]
 
     main(cfg)

@@ -3,9 +3,10 @@
 # 图片特征维度
 img_feature_dim: 512
 batch_size: 32
-epochs: 8
-device: cuda:2
+epochs: 24
+device: cuda:3
 learning_rate: 0.0001
+overfitting_max_epoch: 2
 
 # 数据集路径
 dataset_path: /data/SunYang/datasets/Algonauts_dataset/algonauts_2023_main/algonauts_2023_challenge_data
