@@ -36,6 +36,27 @@ fMRI是功能性磁共振成像的缩写，是一种无创非放射性观察大�
 
 > BIDS（Brain Imaging Data Structure）是一种用于存储和共享神经影像数据的标准格式，它是一种基于文件夹的格式，其中包含了元数据和原始数据。BIDS格式的数据可以使得数据共享更加方便，同时也可以使得数据的重复使用更加容易。
 
+## Experiments
+### Information regarding the NSD experiment
+NSD实验中使用的73,000张图像是COCO图像的一个子集，具体来说是2017年的训练/验证划分（详见 http://cocodataset.org ）。NSD图像是从COCO数据库中选择的，以便所有的NSD图像都有“stuff”，“panoptic”和“coco”注释。此外，由于NSD实验涉及正方形的刺激呈现，我们使用一种特定的方法裁剪COCO图像，试图最小化图像中语义信息的损失（详细信息请参考这里： https://cvnlab.slite.page/p/NKalgWd__F/Experiments ）。
+
+COCO注释可以在COCO网站上访问。以下Python笔记本对于入门很有帮助：https://github.com/cocodataset/cocoapi/blob/master/PythonAPI/pycocoDemo.ipynb
+
+##### nsddata/experiments/nsd/nsd_stim_info_merged.csv
+这是一个逗号分隔的文本文件，包含了与NSD图像的选择和准备相关的信息。在一个标题行之后，接下来是每张NSD实验中使用的73,000张图像的一行。
+
+- 第1列是从0开始的图像编号（0-72999）。
+- 第2列（cocoId）是COCO数据库中分配给该图像的ID号。
+- 第3列（cocoSplit）是“train2017”或“val2017”。COCO网站将图像划分为训练集和验证集。NSD实验并没有涉及到这种划分的任何使用（比如在实验设计中），但我们提供这些信息以防有用。
+- 第4列（cropBox）是一个四元组，表示原始COCO图像是如何裁剪的。格式是（top, bottom, left, right），以图像大小的分数表示。注意，裁剪总是沿着最大的维度进行。因此，cropBox中总是有两个0。
+- 第5列（loss）是裁剪后的物体损失分数。详见论文，以及下面的“COCO图像裁剪选择细节”部分。
+- 第6列（nsdId）是该图像在NSD实验中使用的73k图像全集中的从0开始的索引。值与第1列相同。（注意，在其他一些情况下，73k ID被指定为从1开始。这里ID被指定为从0开始。）
+- 第7列（flagged）是True，如果该图像有可疑内容（比如暴力或色情内容）。
+- 第8列（BOLD5000）是True，如果该图像包含在BOLD5000数据集中（http://bold5000.github.io）。注意NSD图像是正方形裁剪的，所以两个数据集中的图像并不完全相同。
+- 第9列（shared1000）是True，如果该图像是NSD实验中向所有8个受试者展示的特殊1000张图像之一。
+- 第10-17列（subjectX）是0或1，表示该图像是否被展示给subjectX（X从1-8变化）。
+- 第18-41列（subjectX_repN）是0，表示该图像没有被展示给subjectX，或者一个正整数T，表示该图像被展示给subjectX在重复N上（X从1-8变化；N从0-2变化，共3次试验）。T提供了与图像展示相关的trialID。trialID是一个从1到30000的从1开始的索引，对应于一个受试者在NSD实验过程中遇到的所有30,000个刺激试验的时间顺序。每张73k NSD图像要么有3个trialID（如果它只被展示给一个受试者），要么有24个trialID（如果它被展示给所有8个受试者）。
+
 ## Functional data (pRF, fLoc)
 这包括在初始7T prffloc扫描会话中进行的pRF和fLoc实验的分析结果。[FMRI在1.5T,3T和7T的区别到底有多大？](https://www.zhihu.com/question/321238415)
 
@@ -189,6 +210,11 @@ $$NC=100\times\frac{ncsnr^2}{ncsnr^2+\frac{\frac{A}{3}+\frac{B}{2}+\frac{C}{1}}{
 ## 关键词
 ### 体素
 体素是体积元素（Volume Pixel）的简称，一张3D医学图像可以看成是由若干个体素构成的，体素是一张3D医疗图像在空间上的最小单元（功能性磁共振成像（fMRI）的基本单元）。[from "医学图像预处理--重采样"](blog.csdn.net/winner19990120/article/details/121605297)
+
+在fMRI中，体素是指脑部图像中的一个小立方体，它包含了一定数量的脑组织，并对应于一个fMRI信号值。不同的扫描仪器或分辨率会导致不同大小的体素，通常体素的边长在1到5毫米之间。
+
+### z-score
+
 
 ### pRF 群感受野
 > 神经元的感受野 (receptive field, RF) 是视觉系统信息处理的基本结构和功能单元。它是指一个神经元在视野里起反应的区域。要了解神经元的加工过程，首先就是要了解神经元的感受野，进而才能明确神经元所接收到的外界物理信息。神经元的感受野一般是通过动物电生理实验获得。而在人类脑成像研究中，由于功能性磁共振成像 (fMRI) 的分辨率在毫米量级，一个体素 (voxel，fMRI 的基本单元 ) 中就包含着成千上万个神经元。体素接收到的外界物理信息就不能简单地用单个神经元的感受野来进行推理，必须对群体的感受野进行刻画，由此产生了体素的群感受野 (population receptive field, pRF) 这个名词。换句话说，pRF 是指体素内的一群神经元在视野里起反应的区域。而从计算角度来说，体素的 pRF 是指一个 fMRI 体素内神经元群体对刺激的累计反应的一个量化模型。在视觉研究领域，体素的 pRF 模型能够很好地被用于解释和预测单个体素对刺激位于不同视野位置时的反应。

@@ -8,7 +8,7 @@
 
 你在排行榜上的排名指标是由所有顶点（包括所有受试者和半球）的平均噪声归一化编码准确度决定的：
 
-$$\text{metric}=Mean\Bigg(\frac{R_1^2}{NC_1}, \dots, \frac{R_1^2}{NC_1}\Bigg) \times 100$$
+$$\text{metric}=Mean\Bigg(\frac{R_1^2}{NC_1}, \dots, \frac{R_v^2}{NC_v}\Bigg) \times 100$$
 
 $$R_v=\text{corr}(G_v, P_v)=\frac{\sum_t(G_{v,t}-\bar{G}_v)(P_{v,t}-\bar{P}_v)}{\sqrt{\sum_t(G_{v,t}-\bar{G}_v)^2(P_{v,t}-\bar{P}_v)^2}}$$
 
