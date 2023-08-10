@@ -1,17 +1,3 @@
-# 如果是folder则创建文件夹，如果是object则下载
-# folder名字来自于data-prefix
-# object名字来自于download
-
-# Author: T_Xu(create), S_Sun(modify)
-'''
-获取每个POI对应的图片集和review summary
-
-POI信息来自meta-xxx.json(from Google Local Data), 根据POI的url获取信息.
-下载的数据保存在'./dataset/xxx(region name)/downloaded_multimodal_data/'中
-其中, 'download.log'为下载日志, 'xxx.png'为下载图片, 'skip_img_file'为已下载的POI的图片(用于下次跳过不再下载), 
-'review_summary.json'为下载的review summary, 'skip_review_summary_file'为已下载的POI的review summary(用于跳过). 
-'''
-
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import WebDriverException
@@ -67,24 +53,30 @@ class Chrome:
                     chrome.get(attr_data_prefix)
                     chrome.download_data(attr_data_prefix)
                 elif attr_data_s3 == 'object': # 文件，直接下载
+                    time.sleep(random.randint(1, 2))
                     attr_href = f_or_o.get_attribute('href') # 文件下载链接
                     attr_download = f_or_o.get_attribute('download') # 当作文件名
                     # 下载
                     object = self.http_get(attr_href)
-                    # 保存
-                    object_path = os.path.join(cur_path, attr_download)
-                    with open(object_path, 'wb') as f:
-                        f.write(object.content)
-                        f.flush()
-                        f.close()
-                        # 保存下载记录
-                        skip_file.write(self.driver.current_url.split('#')[1] + '\n')
-                        skip_file.flush()
-                        print('+++下载成功+++ ---> '+attr_href)
+                    if object is None:
+                        print('+++下载失败+++ ---> '+attr_href)
+                    else:
+                        # 保存
+                        object_path = os.path.join(cur_path, attr_download)
+                        with open(object_path, 'wb') as f:
+                            f.write(object.content)
+                            f.flush()
+                            f.close()
+                            # 保存下载记录
+                            skip_file.write(self.driver.current_url.split('#')[1] + '\n')
+                            skip_file.flush()
+                            print('+++下载成功+++ ---> '+attr_href)
             # 若只有1页是3个元素
             if (i + 3) >= len(pagination_list):
                 break
             # 下一页
+            time.sleep(1.8)
+            pagination_list = self.driver.find_elements(By.CSS_SELECTOR, ".pagination li") # 再定位元素，防止StaleElementReferenceException
             pagination_list[len(pagination_list) - 1].find_element(By.CSS_SELECTOR, 'a').click()
             time.sleep(1.3)
         # 关闭浏览器
@@ -95,8 +87,10 @@ class Chrome:
         ua = UserAgent()
         headers = {'User-Agent': ua.random}
         # get请求，自动跳转，添加头信息
-        res = requests.get(url, allow_redirects=True, headers=headers, verify=False)
-        
+        try:
+            res = requests.get(url, allow_redirects=True, headers=headers, verify=False, timeout=10.)
+        except requests.exceptions.ConnectionError:
+            return None
         return res
 
 if __name__ == '__main__':
