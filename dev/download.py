@@ -56,6 +56,10 @@ class Chrome:
                     time.sleep(random.randint(1, 2))
                     attr_href = f_or_o.get_attribute('href') # 文件下载链接
                     attr_download = f_or_o.get_attribute('download') # 当作文件名
+                    # 跳过已下载
+                    if attr_href in skip_img_set:
+                        continue
+
                     # 下载
                     object = self.http_get(attr_href)
                     if object is None:
@@ -69,6 +73,7 @@ class Chrome:
                             f.close()
                             # 保存下载记录
                             skip_file.write(self.driver.current_url.split('#')[1] + '\n')
+                            skip_file.write(attr_href + '\n')
                             skip_file.flush()
                             print('+++下载成功+++ ---> '+attr_href)
             # 若只有1页是3个元素
@@ -88,7 +93,9 @@ class Chrome:
         headers = {'User-Agent': ua.random}
         # get请求，自动跳转，添加头信息
         try:
-            res = requests.get(url, allow_redirects=True, headers=headers, verify=False, timeout=10.)
+            # 绕过代理
+            proxies = {'http': None, 'https': None}
+            res = requests.get(url, allow_redirects=True, headers=headers, verify=False, timeout=20., proxies=proxies)
         except requests.exceptions.ConnectionError:
             return None
         return res
