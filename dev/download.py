@@ -39,11 +39,10 @@ def http_get(url):
 
 def get_data_url(chrome: Chrome, cur_dir: str = ''):
     # 睡一会
-    time.sleep(1.5)
-    # 当前路径
-    cur_path = chrome.dataset_prefix_path + '/' + cur_dir
+    time.sleep(random.randint(1, 3))
+    # 目标路径
     print('=======目标路径=======')
-    print(cur_path)
+    print(cur_dir)
     
     # 找到分页，遍历所有page
     pagination_list = chrome.driver.find_elements(By.CSS_SELECTOR, ".pagination li")
@@ -56,24 +55,29 @@ def get_data_url(chrome: Chrome, cur_dir: str = ''):
             attr_data_s3 = f_or_o.get_attribute('data-s3')
             if attr_data_s3 == 'folder': # 文件夹，需要递归调用
                 attr_data_prefix = f_or_o.get_attribute('data-prefix')
+                # 手动跳过一些目录
+                if attr_data_prefix in []:
+                    continue
                 
                 # 递归文件夹内的内容
                 chrome_ = Chrome(args.proxy, args.chromedriver_path, args.parent_path, args.base_url)
                 chrome_.get(attr_data_prefix)
                 get_data_url(chrome_, attr_data_prefix)
             elif attr_data_s3 == 'object': # 文件，直接下载
-                time.sleep(random.randint(1, 2))
                 attr_href = f_or_o.get_attribute('href') # 文件下载链接
                 attr_download = f_or_o.get_attribute('download') # 当作文件名
 
                 # 保存url
                 obj = {
-                    'dir': cur_path, 
-                    'file_path': cur_path + attr_download, 
+                    'dir': cur_dir, 
+                    'file_path': cur_dir + attr_download, 
                     'url': attr_href,
                 }
-                line = json.dumps(obj) + '\n'
-                data_url_file.write(line)
+                line = json.dumps(obj) 
+                # 跳过已记录
+                if line in data_url_set:
+                    continue
+                data_url_file.write(line + '\n')
                 data_url_file.flush()
                 
         # 若只有1页是3个元素
@@ -87,24 +91,26 @@ def get_data_url(chrome: Chrome, cur_dir: str = ''):
     # 关闭浏览器
     chrome.driver.quit()
 
-def download_data(data_url_file, skip_file_set):
+def download_data(dataset_prefix_path, data_url_file, skip_file_set):
+    # 再次转set
     data_url_file.seek(0)
     data_url_set = set(data_url_file.read().splitlines())
-
+    
+    # 遍历
     for obj in data_url_set:
         obj: dict = json.loads(obj)
         # 跳过已下载
         if obj['url'] in skip_file_set:
             continue
         # 创建文件夹
-        os.makedirs(obj['dir'], exist_ok=True)
+        os.makedirs(os.path.join(dataset_prefix_path, obj['dir']), exist_ok=True)
         # 下载文件
         data = http_get(obj['url'])
         if data is None:
             print('+++下载失败+++ ---> ' + obj['url'])
         else:
             # 保存
-            with open(obj['file_path'], 'wb') as f:
+            with open(os.path.join(dataset_prefix_path, obj['file_path']), 'wb') as f:
                 f.write(data.content)
                 f.flush()
                 f.close()
@@ -127,6 +133,8 @@ if __name__ == '__main__':
     # 保存下载链接文件 保存格式(每行)：{'dir': '', 'file_path': '', 'url': ''}
     data_url_file_path = os.path.join(args.parent_path, 'data_url_file')
     data_url_file = open(data_url_file_path, 'a+')
+    data_url_file.seek(0)
+    data_url_set = set(data_url_file.read().splitlines())
     # 跳过文件
     skip_file_path = os.path.join(args.parent_path, 'skip_file')
     skip_file = open(skip_file_path, 'a+')
@@ -141,6 +149,6 @@ if __name__ == '__main__':
     get_data_url(chrome)
 
     # 下载数据
-    download_data(data_url_file, skip_file_set)
+    download_data(args.parent_path, data_url_file, skip_file_set)
 
     print('++++下载完成++++')
