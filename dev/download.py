@@ -9,6 +9,8 @@ import random
 import time
 import logging
 import argparse
+from multiprocessing.pool import ThreadPool
+import threading
 
 class Chrome:
     def __init__(self, proxy, driver_path, dataset_prefix_path, base_url):
@@ -33,7 +35,7 @@ def http_get(url):
         # 绕过代理
         proxies = {'http': None, 'https': None}
         res = requests.get(url, allow_redirects=True, headers=headers, verify=False, timeout=20., proxies=proxies)
-    except requests.exceptions.ConnectionError:
+    except requests.exceptions.RequestException:
         return None
     return res
 
@@ -91,33 +93,44 @@ def get_data_url(chrome: Chrome, cur_dir: str = ''):
     # 关闭浏览器
     chrome.driver.quit()
 
+def download_file(obj, dataset_prefix_path, skip_file_set):
+    obj: dict = json.loads(obj)
+        
+    # 跳过已下载
+    if obj['url'] in skip_file_set:
+        return
+    # 跳过已存在
+    file_path = os.path.join(dataset_prefix_path, obj['file_path'])
+    if os.path.exists(file_path):
+        return
+    
+    time.sleep(random.randint(1, 3))
+    # 创建文件夹
+    os.makedirs(os.path.join(dataset_prefix_path, obj['dir']), exist_ok=True)
+
+    data = http_get(obj['url'])
+    if data is None:
+        print('+++下载失败+++ ---> ' + obj['url'])
+    else:
+        # 保存
+        with open(file_path, 'wb') as f:
+            f.write(data.content)
+            f.flush()
+            f.close()
+            # 保存下载记录，上互斥锁
+            lock.acquire()
+            skip_file.write(obj['url'] + '\n')
+            skip_file.flush()
+            lock.release()
+            print('+++下载成功+++ ---> ' + obj['url'])
+
 def download_data(dataset_prefix_path, data_url_file, skip_file_set):
     # 再次转set
     data_url_file.seek(0)
     data_url_set = set(data_url_file.read().splitlines())
     
-    # 遍历
-    for obj in data_url_set:
-        obj: dict = json.loads(obj)
-        # 跳过已下载
-        if obj['url'] in skip_file_set:
-            continue
-        # 创建文件夹
-        os.makedirs(os.path.join(dataset_prefix_path, obj['dir']), exist_ok=True)
-        # 下载文件
-        data = http_get(obj['url'])
-        if data is None:
-            print('+++下载失败+++ ---> ' + obj['url'])
-        else:
-            # 保存
-            with open(os.path.join(dataset_prefix_path, obj['file_path']), 'wb') as f:
-                f.write(data.content)
-                f.flush()
-                f.close()
-                # 保存下载记录
-                skip_file.write(obj['url'] + '\n')
-                skip_file.flush()
-                print('+++下载成功+++ ---> ' + obj['url'])
+    # 下载文件，多线程
+    pool.map(lambda obj: download_file(obj, dataset_prefix_path, skip_file_set), data_url_set)
 
 if __name__ == '__main__':
     # paremeters
@@ -126,6 +139,7 @@ if __name__ == '__main__':
     parser.add_argument('--chromedriver_path', type=str, default='D:\Development-Files\ChromeDriver\chromedriver.exe', help='chrome driver local path')
     parser.add_argument('--parent_path', type=str, default='E:/dev/dataset/nsd', help='dataset path')
     parser.add_argument('--base_url', type=str, default='https://natural-scenes-dataset.s3.amazonaws.com/index.html', help='dataset websit url')
+    parser.add_argument('--max_threads', type=int, default='3', help='max num of threads')
     args, _ = parser.parse_known_args()
 
     # path设置
@@ -140,6 +154,11 @@ if __name__ == '__main__':
     skip_file = open(skip_file_path, 'a+')
     skip_file.seek(0) # 光标移到文件开始
     skip_file_set = set(skip_file.read().splitlines()) # 记录：uri
+
+    # 线程池
+    pool = ThreadPool(args.max_threads)
+    # 互斥锁
+    lock = threading.Lock()
 
     # 初始化浏览器
     chrome = Chrome(args.proxy, args.chromedriver_path, args.parent_path, args.base_url)
