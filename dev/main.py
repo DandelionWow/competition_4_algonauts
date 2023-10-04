@@ -360,14 +360,14 @@ if __name__ == "__main__":
     roi_list_all_model = roi_list_4_clip_linear + roi_list_4_vgg16_linear + \
         roi_list_4_alexnet_linear + roi_list_4_vgg16_mlp
     subj_list = [
-        # 1,
-        # 2,
-        # 3,
-        # 4,
-        # 5,
-        # 6,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
         7,
-        # 8,
+        8,
     ]
 
     main(cfg)
