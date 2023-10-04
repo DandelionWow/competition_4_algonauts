@@ -98,7 +98,7 @@ COCO注释可以在COCO网站上访问。以下Python笔记本对于入门很有
 ## Behavioral data
 ### NSD experiment
 ##### nsddata/ppdata/subjAA/behav/responses.tsv
-这是一个以制表符分隔的文本文件，包含了NSD实验中主题AA的所有行为数据。在一个标题行之后，每一行对应一个受试者遇到的刺激试验。不同的运行和扫描会话中的刺激试验被连接在一起。
+这是一个以制表符分隔的文本文件，包含了NSD实验中subjectAA的所有行为数据。在一个标题行之后，每一行对应一个受试者遇到的刺激试验。不同的运行和扫描会话中的刺激试验被连接在一起。
 
 - 第1列（SUBJECT）是受试者编号（1-8）。 
 - 第2列（SESSION）是会话编号（1-40）。 
@@ -121,6 +121,19 @@ COCO注释可以在COCO网站上访问。以下Python笔记本对于入门很有
 - 第19列 (MISSINGDATA) 是0 (按钮按压被记录) 或 1 (按钮未被记录)。这种情况非常罕见 (它发生在两个运行中 (见 knowndataproblems.txt))，如果发生，它发生在整个运行级别上。在按钮未被记录的情况下，注意，第9-11和15-18列必然为NaN。 
 
 注意，对于新颖图像，第12-13列为NaN。注意，如果在给定试验中没有按键，则第9-11、15和18列为NaN。
+
+## Structural data
+这涵盖了为NSD数据集（例如T1和T2卷）以及FreeSurfer输出准备的解剖数据。
+
+### FreeSurfer files
+##### nsddata/freesurfer/subjAA
+这是受试者AA的最终FreeSurfer目录，反映了对组织分割的手动编辑的结果。
+
+在运行FreeSurfer时，提供了一个0.8毫米的T1体积给FreeSurfer，并使用了‘-hires’标志。此外，我们还进行了一些额外的FreeSurfer相关处理，创建了一些额外的文件。这些变化包括（1）创建layerB1、layerB2和layerB3表面，它们分别对应于从皮层表面到白质表面距离的25%、50%和75%；（2）创建半膨胀表面（例如?h.semiinflated + ?h.sulcsemiinflated）；以及（3）创建扁平化的皮层表面（例如?h.full.flat.patch.3d））。另外，注意手动编辑过的受试者目录有修改过的文件：例如，brainmask.mgz文件有“孔”（为了帮助表面重建过程）。
+
+注意，FreeSurfer有一个内置的fsaverage扁平化表面，叫做[lh,rh].cortex.patch.flat。这与上述描述的扁平化皮层表面是不同的。注意，这两个扁平化表面旋转得不一样，所以为了可视化目的，可能需要旋转表面到一个更规范的方向。另外，注意全皮层扁平化表面去掉了靠近中线的大量皮层（例如回旋皮层），所以在解释结果时要小心。
+
+除了典型的FreeSurfer输出之外，受试者目录还包含了许多NSD特定的数据文件。这些包括ROI文件和来自prf、floc和NSD实验的结果。
 
 ## Functional data (pRF, fLoc)
 这包括在初始7T prffloc扫描会话中进行的pRF和fLoc实验的分析结果。[FMRI在1.5T,3T和7T的区别到底有多大？](https://www.zhihu.com/question/321238415)
@@ -349,3 +362,6 @@ MNI空间是一种基于蒙特利尔神经学研究所（MNI）模板的群体�
 
 ### 噪声上限信噪比 ncsnr
 噪声上限信噪比（noise ceiling signal-to-noise ratio, ncsnr）：指一种用来评估fMRI数据质量的指标，它反映了一个体素（或顶点）中刺激相关信号与噪声的比例。
+
+### 噪声上限(noise ceiling)
+越高越好
